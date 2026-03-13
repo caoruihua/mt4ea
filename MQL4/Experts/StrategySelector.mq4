@@ -48,7 +48,7 @@ input double   Session6_SL_USD                    = 20.0; // Session6 止损
 input double   Session6_TP_USD                    = 45.0; // Session6 止盈
 
 // 斜率通道策略参数（独立风控）
-input int      Channel_Lookback_Bars              = 20;   // 斜率回看K线数
+input int      Channel_Lookback_Bars              = 6;    // 斜率回看K线数
 input double   Channel_MinSlope                   = 0.20; // 最小斜率阈值（每根K线）
 input double   Channel_ParallelTolerance          = 0.20; // 上下轨斜率近似平行容差
 input double   Channel_MaxWidth_USD               = 12.0; // 通道平均宽度上限
