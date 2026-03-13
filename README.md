@@ -30,7 +30,8 @@ MQL4/
         ├── StrategyLinearTrend.mqh
         ├── StrategyOscillation.mqh
         ├── StrategyBreakout.mqh
-        └── StrategyReversal.mqh
+        ├── StrategyReversal.mqh
+        └── StrategySlopeChannel.mqh
 ```
 
 ---
@@ -62,6 +63,7 @@ MQL4/
 - **StrategyOscillation**：Session4，亚盘区间边界反转
 - **StrategyBreakout**：Session2/5/6，突破与动量跟随
 - **StrategyReversal**：Session5，假突破反转 + EMA回踩
+- **StrategySlopeChannel**：08:00-15:00 斜率平行通道策略（独立SL/TP）
 
 ---
 
@@ -85,6 +87,33 @@ MQL4/
 - `Session5_EMA_Tolerance_USD`：Session5 EMA回踩容差
 - `Session6_MinBody_USD`：Session6 动量实体最小阈值
 - `Session6_SL_USD / Session6_TP_USD`：Session6 止损止盈
+
+斜率通道策略（独立参数）：
+
+- `Channel_Lookback_Bars`：斜率回看K线数量
+- `Channel_MinSlope`：最小斜率阈值
+- `Channel_ParallelTolerance`：上下轨斜率平行容差
+- `Channel_MaxWidth_USD`：通道平均宽度上限
+- `Channel_EntryTolerance_USD`：靠近通道边界的入场容差
+- `Channel_ADX_Min`：ADX最小阈值（趋势强度过滤）
+- `Channel_SL_USD / Channel_TP_USD`：斜率通道策略独立止损止盈
+- `Channel_MaxTradesPerDay`：斜率通道日内最大交易次数
+
+---
+
+## 3.2 最新执行规则与默认参数（已落地）
+
+- **区间高低点策略（StrategyOscillation）**：仅在 `10:00-15:00` 执行
+- **斜率策略（StrategySlopeChannel）**：在 `08:00-15:00` 执行
+- 在 `10:00-15:00` 内若触及日内高/低点：
+  - 区间高低点策略优先（priority=20）
+  - 斜率策略次级（priority=13）
+
+关键默认参数：
+
+- `Session6_MinBody_USD = 4.5`
+- `Channel_SL_USD = 4.0`
+- `Channel_TP_USD = 4.0`
 
 ---
 

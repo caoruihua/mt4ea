@@ -23,7 +23,8 @@ enum StrategyId
    STRATEGY_LINEAR_TREND,
    STRATEGY_OSCILLATION,
    STRATEGY_BREAKOUT,
-   STRATEGY_REVERSAL
+   STRATEGY_REVERSAL,
+   STRATEGY_SLOPE_CHANNEL
 };
 
 struct StrategyContext
@@ -70,6 +71,17 @@ struct StrategyContext
    double session6_minBody_usd;
    double session6_sl_usd;
    double session6_tp_usd;
+
+   // Slope channel strategy params
+   int    channel_lookback_bars;
+   double channel_min_slope;
+   double channel_parallel_tolerance;
+   double channel_max_width_usd;
+   double channel_entry_tolerance_usd;
+   double channel_adx_min;
+   double channel_sl_usd;
+   double channel_tp_usd;
+   int    channel_max_trades_per_day;
 };
 
 struct RuntimeState
@@ -86,6 +98,7 @@ struct RuntimeState
    int      session3Trades;
    bool     session2Traded;
    int      session5Trades;
+   int      channelTrades;
 
    double   fakeBreakoutLow;
    double   fakeBreakoutHigh;

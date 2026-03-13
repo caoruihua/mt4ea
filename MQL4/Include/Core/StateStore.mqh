@@ -25,6 +25,7 @@ public:
       state.session3Trades = 0;
       state.session2Traded = false;
       state.session5Trades = 0;
+      state.channelTrades = 0;
       state.fakeBreakoutLow = 0.0;
       state.fakeBreakoutHigh = 0.0;
       state.countersResetDate = 0;
@@ -48,6 +49,7 @@ public:
       FileWrite(handle, "Session3Trades=" + IntegerToString(state.session3Trades));
       FileWrite(handle, "Session2Traded=" + IntegerToString(state.session2Traded ? 1 : 0));
       FileWrite(handle, "Session5Trades=" + IntegerToString(state.session5Trades));
+      FileWrite(handle, "ChannelTrades=" + IntegerToString(state.channelTrades));
       FileWrite(handle, "FakeBreakoutLow=" + DoubleToString(state.fakeBreakoutLow, Digits));
       FileWrite(handle, "FakeBreakoutHigh=" + DoubleToString(state.fakeBreakoutHigh, Digits));
       FileWrite(handle, "CountersResetDate=" + TimeToString(state.countersResetDate));
@@ -86,6 +88,7 @@ public:
          else if(key == "Session3Trades") state.session3Trades = (int)StringToInteger(value);
          else if(key == "Session2Traded") state.session2Traded = (StringToInteger(value) != 0);
          else if(key == "Session5Trades") state.session5Trades = (int)StringToInteger(value);
+         else if(key == "ChannelTrades") state.channelTrades = (int)StringToInteger(value);
          else if(key == "FakeBreakoutLow") state.fakeBreakoutLow = StringToDouble(value);
          else if(key == "FakeBreakoutHigh") state.fakeBreakoutHigh = StringToDouble(value);
          else if(key == "CountersResetDate") state.countersResetDate = StringToTime(value);

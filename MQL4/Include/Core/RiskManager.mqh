@@ -69,6 +69,7 @@ public:
       state.session3Trades = 0;
       state.session2Traded = false;
       state.session5Trades = 0;
+      state.channelTrades = 0;
       state.fakeBreakoutLow = 0.0;
       state.fakeBreakoutHigh = 0.0;
       state.asianRangeDate = 0;

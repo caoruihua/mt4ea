@@ -12,6 +12,7 @@
 #include "../Strategies/StrategyOscillation.mqh"
 #include "../Strategies/StrategyBreakout.mqh"
 #include "../Strategies/StrategyReversal.mqh"
+#include "../Strategies/StrategySlopeChannel.mqh"
 
 class CStrategyRegistry
 {
@@ -20,6 +21,7 @@ private:
    CStrategyOscillation m_oscillation;
    CStrategyBreakout    m_breakout;
    CStrategyReversal    m_reversal;
+   CStrategySlopeChannel m_slopeChannel;
 
 public:
    bool EvaluateBestSignal(StrategyContext &ctx, RuntimeState &state, TradeSignal &best)
@@ -46,6 +48,12 @@ public:
       }
 
       if(m_reversal.CanTrade(ctx, state) && m_reversal.GenerateSignal(ctx, state, tmp))
+      {
+         if(!best.valid || tmp.priority > best.priority)
+            best = tmp;
+      }
+
+      if(m_slopeChannel.CanTrade(ctx, state) && m_slopeChannel.GenerateSignal(ctx, state, tmp))
       {
          if(!best.valid || tmp.priority > best.priority)
             best = tmp;

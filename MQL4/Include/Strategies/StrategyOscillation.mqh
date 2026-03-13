@@ -16,8 +16,14 @@ public:
 
    virtual bool CanTrade(StrategyContext &ctx, RuntimeState &state)
    {
+      // 仅在 10:00-15:00 执行区间高低点策略
       if(ctx.sessionId != 4)
          return false;
+
+      int h = TimeHour(ctx.beijingTime);
+      if(h < 10 || h >= 15)
+         return false;
+
       if(state.asianHigh <= 0 || state.asianLow <= 0)
          return false;
       return true;
@@ -44,7 +50,7 @@ public:
          signal.takeProfit = NormalizeDouble(Bid - ctx.session4_tp_usd, ctx.digits);
          signal.comment = "Session4-Short";
          signal.reason = "Near Asian high, mean reversion short";
-         signal.priority = 8;
+         signal.priority = 20; // 10:00-15:00 触及高低点时优先级高于斜率策略
          return true;
       }
 
@@ -58,7 +64,7 @@ public:
          signal.takeProfit = NormalizeDouble(Ask + ctx.session4_tp_usd, ctx.digits);
          signal.comment = "Session4-Long";
          signal.reason = "Near Asian low, mean reversion long";
-         signal.priority = 8;
+         signal.priority = 20; // 10:00-15:00 触及高低点时优先级高于斜率策略
          return true;
       }
 
