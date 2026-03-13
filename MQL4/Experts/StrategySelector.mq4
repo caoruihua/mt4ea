@@ -205,6 +205,22 @@ int OnInit()
 
    g_logger.Info("=== StrategySelector Modular EA initialized ===");
    g_logger.Info(StringFormat("Symbol=%s TF=%d Magic=%d", Symbol(), Period(), MagicNumber));
+
+   // 启动时打印时区转换结果，便于核对“服务器时间 -> 北京时间”是否正确
+   datetime serverNow = TimeCurrent();
+   datetime localNow = TimeLocal();
+   datetime beijingNow = g_clock.GetBeijingTime(TimeZoneOffset);
+   int initSession = g_clock.GetCurrentSession(beijingNow);
+   g_logger.Info(StringFormat(
+      "TimeCheck OnInit | Server=%s | Local=%s | Beijing=%s | Offset=%d | Session=%d(%s)",
+      TimeToStr(serverNow, TIME_DATE|TIME_SECONDS),
+      TimeToStr(localNow, TIME_DATE|TIME_SECONDS),
+      TimeToStr(beijingNow, TIME_DATE|TIME_SECONDS),
+      TimeZoneOffset,
+      initSession,
+      g_clock.GetSessionName(initSession)
+   ));
+
    return(INIT_SUCCEEDED);
 }
 
