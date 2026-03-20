@@ -15,7 +15,7 @@ input double StopBufferUsd        = 0.5;       // 结构止损额外缓冲距离
 input double DailyPriceTargetUsd  = 50.0;      // 北京时间日内累计净价格差达到该值后，停止当日开新仓（XAUUSD价格单位）
 input int    ServerToBeijingHours = 6;         // 服务器时间+该值=北京时间（常见：GMT+2券商填6，GMT+3填5，GMT+0填8）
 input bool   EnableDailySummaryLog = true;     // 是否在北京时间跨日时输出"昨日汇总（价格差+美元净盈亏）"
-input bool   EnablePerBarDailyStats = false;   // 是否每根新K线输出"今日累计价格差+今日美元净盈亏"
+input bool   EnablePerBarDailyStats = true;    // 是否每根新K线输出"今日累计价格差+今日美元净盈亏"（调试期建议开启）
 input string TradeSymbol          = "XAUUSD";  // 允许交易品种
 input bool   EnableDebugLogs      = true;      // 是否输出调试日志（建议实盘可关闭）
 
