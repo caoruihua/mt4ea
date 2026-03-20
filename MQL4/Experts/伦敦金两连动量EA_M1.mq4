@@ -1,16 +1,16 @@
 //+------------------------------------------------------------------+
-//|                                      XAUUSD_ThreeBarMomentum_EA  |
-//|                    M5 momentum follow-through EA for XAUUSD      |
+//|                                      XAUUSD_TwoBarMomentum_EA    |
+//|                    M1 momentum follow-through EA for XAUUSD      |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.3"
-#property description "伦敦金M5三连动量EA（精简版）"
+#property version   "1.4"
+#property description "伦敦金M1两连动量EA（精简版）"
 
 input double FixedLots            = 0.01;      // 单次下单手数，同时也作为最大总持仓上限；默认最多持仓 0.01 手。
 input int    MagicNumber          = 20260317;  // EA 订单唯一标识
 input int    SlippagePoints       = 50;        // 市价下单最大滑点（points）
-input double TakeProfitUsd        = 5.0;       // 固定止盈价格距离（XAUUSD价格单位，不是账户盈亏美元）
-input double MinThreeBarMoveUsd   = 5.0;       // 最近3根已收盘K线的最小净涨跌幅（XAUUSD价格单位）
+input double TakeProfitUsd        = 3.0;       // 固定止盈价格距离（XAUUSD价格单位，不是账户盈亏美元）
+input double MinThreeBarMoveUsd   = 5.0;       // 最近2根已收盘K线的最小净涨跌幅（XAUUSD价格单位）
 input double StopBufferUsd        = 0.5;       // 结构止损额外缓冲距离（XAUUSD价格单位，不是固定止损美元）
 input string TradeSymbol          = "XAUUSD";  // 允许交易品种
 input bool   EnableDebugLogs      = true;      // 是否输出调试日志（建议实盘可关闭）
@@ -32,10 +32,10 @@ void LogDebug(string msg)
       Print("[TBM][DEBUG] ", msg);
 }
 
-// 检测是否出现新的 M5 K线，保证每根新K线只判断一次信号。
+// 检测是否出现新的 M1 K线，保证每根新K线只判断一次信号。
 bool IsNewBar()
 {
-   datetime currentBarTime = iTime(Symbol(), PERIOD_M5, 0);
+   datetime currentBarTime = iTime(Symbol(), PERIOD_M1, 0);
    if(currentBarTime == 0)
       return(false);
 
@@ -55,7 +55,7 @@ bool IsNewBar()
 // 基础历史数据保护，避免 EA 刚挂上图表时读取到不完整的K线数据。
 bool HasEnoughBars()
 {
-   return(iBars(Symbol(), PERIOD_M5) > 10);
+   return(iBars(Symbol(), PERIOD_M1) > 10);
 }
 
 // 统计当前图表品种上，本 EA 已开仓订单的总手数。
@@ -81,80 +81,80 @@ double GetManagedOpenLots()
    return(lots);
 }
 
-// 判断是否满足三连阳动量条件：
-// 1. 最近 3 根已收盘K线全部收阳
+// 判断是否满足两连阳动量条件：
+// 1. 最近 2 根已收盘K线全部收阳
 // 2. High 逐根抬高
 // 3. Close 逐根抬高
-// 4. 从第3根信号K线开盘价到第1根信号K线收盘价的净涨幅至少达到设定阈值
+// 4. 从第2根信号K线开盘价到第1根信号K线收盘价的净涨幅至少达到设定阈值
 bool IsBullishMomentumSetup()
 {
-   double open3 = iOpen(Symbol(), PERIOD_M5, 3);
-   double open2 = iOpen(Symbol(), PERIOD_M5, 2);
-   double open1 = iOpen(Symbol(), PERIOD_M5, 1);
-   double close3 = iClose(Symbol(), PERIOD_M5, 3);
-   double close2 = iClose(Symbol(), PERIOD_M5, 2);
-   double close1 = iClose(Symbol(), PERIOD_M5, 1);
-   double high3 = iHigh(Symbol(), PERIOD_M5, 3);
-   double high2 = iHigh(Symbol(), PERIOD_M5, 2);
-   double high1 = iHigh(Symbol(), PERIOD_M5, 1);
+   double open2 = iOpen(Symbol(), PERIOD_M1, 2);
+   double open1 = iOpen(Symbol(), PERIOD_M1, 1);
+   double close2 = iClose(Symbol(), PERIOD_M1, 2);
+   double close1 = iClose(Symbol(), PERIOD_M1, 1);
+   double high2 = iHigh(Symbol(), PERIOD_M1, 2);
+   double high1 = iHigh(Symbol(), PERIOD_M1, 1);
 
-   if(!(close3 > open3 && close2 > open2 && close1 > open1))
+   if(!(close2 > open2 && close1 > open1))
       return(false);
 
-   if(!(high2 > high3 && high1 > high2))
+   if(!(high1 > high2))
       return(false);
 
-   if(!(close2 > close3 && close1 > close2))
+   if(!(close1 > close2))
       return(false);
 
-   return((close1 - open3) >= MinThreeBarMoveUsd);
+   return((close1 - open2) >= MinThreeBarMoveUsd);
 }
 
-// 判断是否满足三连阴动量条件：
-// 1. 最近 3 根已收盘K线全部收阴
+// 判断是否满足两连阴动量条件：
+// 1. 最近 2 根已收盘K线全部收阴
 // 2. Low 逐根降低
 // 3. Close 逐根降低
-// 4. 从第3根信号K线开盘价到第1根信号K线收盘价的净跌幅至少达到设定阈值
+// 4. 从第2根信号K线开盘价到第1根信号K线收盘价的净跌幅至少达到设定阈值
 bool IsBearishMomentumSetup()
 {
-   double open3 = iOpen(Symbol(), PERIOD_M5, 3);
-   double open2 = iOpen(Symbol(), PERIOD_M5, 2);
-   double open1 = iOpen(Symbol(), PERIOD_M5, 1);
-   double close3 = iClose(Symbol(), PERIOD_M5, 3);
-   double close2 = iClose(Symbol(), PERIOD_M5, 2);
-   double close1 = iClose(Symbol(), PERIOD_M5, 1);
-   double low3 = iLow(Symbol(), PERIOD_M5, 3);
-   double low2 = iLow(Symbol(), PERIOD_M5, 2);
-   double low1 = iLow(Symbol(), PERIOD_M5, 1);
+   double open2 = iOpen(Symbol(), PERIOD_M1, 2);
+   double open1 = iOpen(Symbol(), PERIOD_M1, 1);
+   double close2 = iClose(Symbol(), PERIOD_M1, 2);
+   double close1 = iClose(Symbol(), PERIOD_M1, 1);
+   double low2 = iLow(Symbol(), PERIOD_M1, 2);
+   double low1 = iLow(Symbol(), PERIOD_M1, 1);
 
-   if(!(close3 < open3 && close2 < open2 && close1 < open1))
+   if(!(close2 < open2 && close1 < open1))
       return(false);
 
-   if(!(low2 < low3 && low1 < low2))
+   if(!(low1 < low2))
       return(false);
 
-   if(!(close2 < close3 && close1 < close2))
+   if(!(close1 < close2))
       return(false);
 
-   return((open3 - close1) >= MinThreeBarMoveUsd);
+   return((open2 - close1) >= MinThreeBarMoveUsd);
 }
 
-// 取最近 3 根信号K线中的最低点，用于多单结构止损。
+// 取最近 2 根信号K线“最高点与最低点的平均价”，用于多单结构止损基准。
 double LowestSignalLow()
 {
-   double low1 = iLow(Symbol(), PERIOD_M5, 1);
-   double low2 = iLow(Symbol(), PERIOD_M5, 2);
-   double low3 = iLow(Symbol(), PERIOD_M5, 3);
-   return(MathMin(low1, MathMin(low2, low3)));
+   double high1 = iHigh(Symbol(), PERIOD_M1, 1);
+   double high2 = iHigh(Symbol(), PERIOD_M1, 2);
+   double low1 = iLow(Symbol(), PERIOD_M1, 1);
+   double low2 = iLow(Symbol(), PERIOD_M1, 2);
+   double highest = MathMax(high1, high2);
+   double lowest = MathMin(low1, low2);
+   return((highest + lowest) / 2.0);
 }
 
-// 取最近 3 根信号K线中的最高点，用于空单结构止损。
+// 取最近 2 根信号K线“最高点与最低点的平均价”，用于空单结构止损基准。
 double HighestSignalHigh()
 {
-   double high1 = iHigh(Symbol(), PERIOD_M5, 1);
-   double high2 = iHigh(Symbol(), PERIOD_M5, 2);
-   double high3 = iHigh(Symbol(), PERIOD_M5, 3);
-   return(MathMax(high1, MathMax(high2, high3)));
+   double high1 = iHigh(Symbol(), PERIOD_M1, 1);
+   double high2 = iHigh(Symbol(), PERIOD_M1, 2);
+   double low1 = iLow(Symbol(), PERIOD_M1, 1);
+   double low2 = iLow(Symbol(), PERIOD_M1, 2);
+   double highest = MathMax(high1, high2);
+   double lowest = MathMin(low1, low2);
+   return((highest + lowest) / 2.0);
 }
 
 // 按券商报价精度标准化价格，避免下单价格小数位不合法。
@@ -165,7 +165,7 @@ double NormalizePrice(double price)
 
 // 检查运行环境是否满足要求：
 // 1. 品种必须是配置中的交易品种
-// 2. 周期必须是 M5
+// 2. 周期必须是 M1
 // 3. 终端和券商必须允许交易
 bool CheckTradeEnvironment()
 {
@@ -180,11 +180,11 @@ bool CheckTradeEnvironment()
    }
    g_loggedWrongSymbol = false;
 
-   if(Period() != PERIOD_M5)
+   if(Period() != PERIOD_M1)
    {
       if(!g_loggedWrongPeriod)
       {
-         LogInfo("EA 只能运行在 M5 周期，当前周期=" + IntegerToString(Period()) + "，暂停交易。");
+         LogInfo("EA 只能运行在 M1 周期，当前周期=" + IntegerToString(Period()) + "，暂停交易。");
          g_loggedWrongPeriod = true;
       }
       return(false);
@@ -271,7 +271,7 @@ void SendMomentumOrder(int orderType)
       SlippagePoints,
       stopLoss,
       takeProfit,
-      "三连动量",
+      "两连动量",
       MagicNumber,
       0,
       orderColor
@@ -301,12 +301,12 @@ int OnInit()
            " 魔术号=" + IntegerToString(MagicNumber) +
            " 固定手数=" + DoubleToString(FixedLots, 2) +
            " 止盈=" + DoubleToString(TakeProfitUsd, 2) +
-           " 三K最小波动=" + DoubleToString(MinThreeBarMoveUsd, 2) +
+           " 两K最小波动=" + DoubleToString(MinThreeBarMoveUsd, 2) +
            " 止损缓冲=" + DoubleToString(StopBufferUsd, 2) +
            " 滑点=" + IntegerToString(SlippagePoints));
 
-   if(Period() != PERIOD_M5)
-      LogInfo("请把 EA 挂到 M5 图表。");
+   if(Period() != PERIOD_M1)
+      LogInfo("请把 EA 挂到 M1 图表。");
 
    if(Symbol() != TradeSymbol)
       LogInfo("请把 EA 挂到 " + TradeSymbol + " 图表。当前图表品种=" + Symbol());
@@ -323,7 +323,7 @@ void OnTick()
    {
       if(!g_loggedBarsNotEnough)
       {
-         LogInfo("本次不判断信号：历史 M5 K线数量不足。");
+         LogInfo("本次不判断信号：历史 M1 K线数量不足。");
          g_loggedBarsNotEnough = true;
       }
       return;
@@ -346,17 +346,17 @@ void OnTick()
 
    if(IsBullishMomentumSetup())
    {
-      LogInfo("检测到三连阳动量信号，准备执行多单。");
+      LogInfo("检测到两连阳动量信号，准备执行多单。");
       SendMomentumOrder(OP_BUY);
       return;
    }
 
    if(IsBearishMomentumSetup())
    {
-      LogInfo("检测到三连阴动量信号，准备执行空单。");
+      LogInfo("检测到两连阴动量信号，准备执行空单。");
       SendMomentumOrder(OP_SELL);
       return;
    }
 
-   LogDebug("最近 3 根已收盘 M5 K线未形成有效三连动量信号。");
+   LogDebug("最近 2 根已收盘 M1 K线未形成有效两连动量信号。");
 }
