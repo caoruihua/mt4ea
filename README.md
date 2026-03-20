@@ -172,3 +172,38 @@ MQL4/
 2. 新增 `Include/Strategies/StrategyXXX.mqh` 并实现 `IStrategy`
 3. 在 `StrategyRegistry.mqh` 注册新策略并设置优先级
 4. 保持 RiskManager 与 TradeExecutor 统一，不在策略内重复风控/执行代码
+
+---
+
+## 7. 两连动量 EA（M5）最新变更说明
+
+文件：`MQL4/Experts/伦敦金两连动量EA_M5.mq4`
+
+已新增“按北京时间日封顶收手”与“日统计日志”能力：
+
+### 7.1 日封顶（按价格差，不按美元盈亏）
+
+- 新参数：`DailyPriceTargetUsd = 50.0`
+- 统计口径（仅本EA、当前品种、当前 MagicNumber、已平仓订单）：
+  - Buy：`OrderClosePrice - OrderOpenPrice`
+  - Sell：`OrderOpenPrice - OrderClosePrice`
+- 采用“净累计”方式（亏损会抵消盈利）。
+- 当北京时间当日累计净价格差 `>= DailyPriceTargetUsd` 时，当日停止开新仓（不强平已有持仓）。
+
+### 7.2 北京时间自然日统计
+
+- 按北京时间 `00:00:00 ~ 23:59:59` 作为一天。
+- 通过服务器时间与 GMT 偏移换算，避免券商服务器时区差异影响统计结果。
+
+### 7.3 日志能力（新增）
+
+- `EnableDailySummaryLog = true`
+  - 北京时间跨日时输出“昨日汇总”：
+  - 昨日净价格差 + 昨日美元净盈亏（`OrderProfit + OrderSwap + OrderCommission`）
+- `EnablePerBarDailyStats = false`
+  - 可选每根新K线输出“今日净价格差 + 今日美元净盈亏”（建议仅调试开启）
+- 达到日封顶时会输出一次封顶日志（带当前净价格差、美元净盈亏与目标值）。
+
+### 7.4 编译验证
+
+- `compile_two_bar_momentum_m5.log`：`0 errors, 0 warnings`
