@@ -3,7 +3,7 @@
 //|                    M5 momentum follow-through EA for XAUUSD      |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.3"
+#property version   "1.4"
 #property description "伦敦金M5二连动量EA（精简版）"
 
 input double FixedLots            = 0.01;      // 单次下单手数，同时也作为最大总持仓上限；默认最多持仓 0.01 手。
@@ -13,8 +13,9 @@ input double TakeProfitUsd        = 5.0;       // 固定止盈价格距离（XAU
 input double MinTwoBarMoveUsd     = 5.0;       // 最近2根已收盘K线的最小净涨跌幅（XAUUSD价格单位）
 input double StopBufferUsd        = 0.5;       // 结构止损额外缓冲距离（XAUUSD价格单位，不是固定止损美元）
 input double DailyPriceTargetUsd  = 50.0;      // 北京时间日内累计净价格差达到该值后，停止当日开新仓（XAUUSD价格单位）
-input bool   EnableDailySummaryLog = true;     // 是否在北京时间跨日时输出“昨日汇总（价格差+美元净盈亏）”
-input bool   EnablePerBarDailyStats = false;   // 是否每根新K线输出“今日累计价格差+今日美元净盈亏”
+input int    ServerToBeijingHours = 6;         // 服务器时间+该值=北京时间（常见：GMT+2券商填6，GMT+3填5，GMT+0填8）
+input bool   EnableDailySummaryLog = true;     // 是否在北京时间跨日时输出"昨日汇总（价格差+美元净盈亏）"
+input bool   EnablePerBarDailyStats = false;   // 是否每根新K线输出"今日累计价格差+今日美元净盈亏"
 input string TradeSymbol          = "XAUUSD";  // 允许交易品种
 input bool   EnableDebugLogs      = true;      // 是否输出调试日志（建议实盘可关闭）
 
@@ -25,6 +26,7 @@ bool g_loggedTradeNotAllow = false;
 bool g_loggedBarsNotEnough = false;
 bool g_loggedDailyTargetReached = false;
 int  g_lastBeijingDayKey = -1;
+int  g_loggedDayWindowKey = -1;
 
 void LogInfo(string msg)
 {
@@ -63,7 +65,8 @@ bool HasEnoughBars()
    return(iBars(Symbol(), PERIOD_M5) > 10);
 }
 
-// 获取“北京时间日期键”，格式：YYYYMMDD。
+// 获取"北京时间日期键"，格式：YYYYMMDD。
+// 传入的 t 必须已经是北京时间坐标。
 int GetBeijingDayKey(datetime t)
 {
    MqlDateTime dt;
@@ -71,47 +74,51 @@ int GetBeijingDayKey(datetime t)
    return(dt.year * 10000 + dt.mon * 100 + dt.day);
 }
 
-// 获取当前“北京时间日期键”。
+// 获取当前"北京时间日期键"。
+// 不依赖 TimeGMT()，直接用 TimeCurrent() + 用户配置的偏移。
+// 公式：北京时间 = 服务器时间 + ServerToBeijingHours 小时
 int GetCurrentBeijingDayKey()
 {
-   datetime beijingNow = TimeGMT() + 8 * 3600;
+   datetime beijingNow = TimeCurrent() + ServerToBeijingHours * 3600;
    return(GetBeijingDayKey(beijingNow));
 }
 
-// 计算“北京时间当天0点”对应的服务器时间边界。
-void GetBeijingDayWindowInServerTime(datetime &dayStartServer, datetime &dayEndServer)
+// 按"北京时间日期键（YYYYMMDD）"计算固定日窗口，并换算到服务器时间：
+// [dayStartServer, dayEndServer)
+// 不依赖 TimeGMT()，直接用 ServerToBeijingHours 偏移。
+// 公式：服务器时间 = 北京时间 - ServerToBeijingHours 小时
+void GetBeijingDayWindowByKeyInServerTime(int dayKey, datetime &dayStartServer, datetime &dayEndServer)
 {
-   datetime serverNow = TimeCurrent();
-   datetime gmtNow = TimeGMT();
-   int serverToGmtOffset = (int)(serverNow - gmtNow);
+   int year  = dayKey / 10000;
+   int month = (dayKey / 100) % 100;
+   int day   = dayKey % 100;
 
-   datetime beijingNow = gmtNow + 8 * 3600;
    MqlDateTime bj;
-   TimeToStruct(beijingNow, bj);
+   bj.year = year;
+   bj.mon  = month;
+   bj.day  = day;
    bj.hour = 0;
-   bj.min = 0;
-   bj.sec = 0;
+   bj.min  = 0;
+   bj.sec  = 0;
+   bj.day_of_week = 0;
+   bj.day_of_year = 0;
 
+   // beijingDayStart = 该日北京时间 00:00:00 的 datetime 数值
    datetime beijingDayStart = StructToTime(bj);
-   dayStartServer = beijingDayStart - 8 * 3600 + serverToGmtOffset;
-   dayEndServer = dayStartServer + 24 * 3600;
+
+   // 服务器时间 = 北京时间 - 偏移
+   dayStartServer = beijingDayStart - ServerToBeijingHours * 3600;
+   dayEndServer   = dayStartServer + 24 * 3600;
 }
 
-// 用“当前时刻服务器时区偏移”把服务器时间换算到北京时间。
-datetime ServerTimeToBeijing(datetime serverTime)
-{
-   datetime serverNow = TimeCurrent();
-   datetime gmtNow = TimeGMT();
-   int serverToGmtOffset = (int)(serverNow - gmtNow);
-
-   datetime gmtTime = serverTime - serverToGmtOffset;
-   return(gmtTime + 8 * 3600);
-}
-
-// 统计指定“北京时间日期键（YYYYMMDD）”已平仓订单的累计净价格差（仅本EA、当前品种）。
+// 统计指定"北京时间日期键（YYYYMMDD）"已平仓订单的累计净价格差（仅本EA、当前品种）。
 // Buy: Close-Open；Sell: Open-Close。亏损会抵消盈利，属于净累计。
 double GetNetPriceMoveByBeijingDayKey(int dayKey)
 {
+   datetime dayStartServer = 0;
+   datetime dayEndServer = 0;
+   GetBeijingDayWindowByKeyInServerTime(dayKey, dayStartServer, dayEndServer);
+
    double totalMove = 0.0;
 
    for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
@@ -133,8 +140,7 @@ double GetNetPriceMoveByBeijingDayKey(int dayKey)
       if(closeTime <= 0)
          continue;
 
-      datetime closeBeijing = ServerTimeToBeijing(closeTime);
-      if(GetBeijingDayKey(closeBeijing) != dayKey)
+      if(closeTime < dayStartServer || closeTime >= dayEndServer)
          continue;
 
       if(type == OP_BUY)
@@ -146,10 +152,14 @@ double GetNetPriceMoveByBeijingDayKey(int dayKey)
    return(totalMove);
 }
 
-// 统计指定“北京时间日期键（YYYYMMDD）”已平仓订单的美元净盈亏（仅本EA、当前品种）。
+// 统计指定"北京时间日期键（YYYYMMDD）"已平仓订单的美元净盈亏（仅本EA、当前品种）。
 // 口径：OrderProfit + OrderSwap + OrderCommission。
 double GetNetUsdByBeijingDayKey(int dayKey)
 {
+   datetime dayStartServer = 0;
+   datetime dayEndServer = 0;
+   GetBeijingDayWindowByKeyInServerTime(dayKey, dayStartServer, dayEndServer);
+
    double totalUsd = 0.0;
 
    for(int i = OrdersHistoryTotal() - 1; i >= 0; i--)
@@ -171,8 +181,7 @@ double GetNetUsdByBeijingDayKey(int dayKey)
       if(closeTime <= 0)
          continue;
 
-      datetime closeBeijing = ServerTimeToBeijing(closeTime);
-      if(GetBeijingDayKey(closeBeijing) != dayKey)
+      if(closeTime < dayStartServer || closeTime >= dayEndServer)
          continue;
 
       totalUsd += (OrderProfit() + OrderSwap() + OrderCommission());
@@ -352,7 +361,7 @@ bool ValidateStops(int orderType, double entryPrice, double stopLoss, double tak
    return(true);
 }
 
-// 按检测到的动量方向执行市价下单，并自动带上“结构止损 + 缓冲距离”以及“固定价格距离止盈”。
+// 按检测到的动量方向执行市价下单，并自动带上"结构止损 + 缓冲距离"以及"固定价格距离止盈"。
 void SendMomentumOrder(int orderType)
 {
    double entryPrice = 0.0;
@@ -453,6 +462,11 @@ int OnInit()
 {
    g_lastBeijingDayKey = GetCurrentBeijingDayKey();
 
+   // 输出初始化时的统计窗口，方便验证偏移是否配对
+   datetime initDayStart = 0;
+   datetime initDayEnd = 0;
+   GetBeijingDayWindowByKeyInServerTime(g_lastBeijingDayKey, initDayStart, initDayEnd);
+
    LogInfo("EA 初始化。品种=" + Symbol() +
            " 周期=" + IntegerToString(Period()) +
            " 魔术号=" + IntegerToString(MagicNumber) +
@@ -460,10 +474,16 @@ int OnInit()
            " 止盈=" + DoubleToString(TakeProfitUsd, 2) +
            " 两K最小波动=" + DoubleToString(MinTwoBarMoveUsd, 2) +
            " 日封顶净价格差=" + DoubleToString(DailyPriceTargetUsd, 2) +
+           " 服务器→北京偏移=" + IntegerToString(ServerToBeijingHours) + "h" +
            " 跨日日志=" + string(EnableDailySummaryLog ? "开" : "关") +
            " K线统计日志=" + string(EnablePerBarDailyStats ? "开" : "关") +
            " 止损缓冲=" + DoubleToString(StopBufferUsd, 2) +
            " 滑点=" + IntegerToString(SlippagePoints));
+
+   LogInfo("初始统计窗口：北京日期=" + IntegerToString(g_lastBeijingDayKey) +
+           " 服务器时间=" + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) +
+           " 窗口开始=" + TimeToString(initDayStart, TIME_DATE|TIME_SECONDS) +
+           " 窗口结束=" + TimeToString(initDayEnd, TIME_DATE|TIME_SECONDS));
 
    if(Period() != PERIOD_M5)
       LogInfo("请把 EA 挂到 M5 图表。");
@@ -507,6 +527,20 @@ void OnTick()
 
       g_lastBeijingDayKey = currentBeijingDayKey;
       g_loggedDailyTargetReached = false;
+      g_loggedDayWindowKey = -1;
+   }
+
+   if(EnableDebugLogs && g_loggedDayWindowKey != currentBeijingDayKey)
+   {
+      datetime dayStartServer = 0;
+      datetime dayEndServer = 0;
+      GetBeijingDayWindowByKeyInServerTime(currentBeijingDayKey, dayStartServer, dayEndServer);
+
+      LogDebug("北京时间固定统计窗口：日期=" + IntegerToString(currentBeijingDayKey) +
+               " 服务器当前=" + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) +
+               " 窗口开始=" + TimeToString(dayStartServer, TIME_DATE|TIME_SECONDS) +
+               " 窗口结束=" + TimeToString(dayEndServer, TIME_DATE|TIME_SECONDS));
+      g_loggedDayWindowKey = currentBeijingDayKey;
    }
 
    double todayNetMove = GetNetPriceMoveByBeijingDayKey(currentBeijingDayKey);
