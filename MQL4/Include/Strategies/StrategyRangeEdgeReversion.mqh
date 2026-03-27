@@ -29,6 +29,14 @@ public:
    virtual string Name() { return "RangeEdgeReversion"; }
 
 private:
+   string SideToString(ENUM_ORDER_TYPE signalType)
+   {
+      if(signalType == OP_BUY)  return "BUY";
+      if(signalType == OP_SELL) return "SELL";
+      return "UNKNOWN";
+   }
+
+private:
    bool CheckPriceStructureFilter(ENUM_ORDER_TYPE signalType);
    bool CheckEmaFilter(ENUM_ORDER_TYPE signalType);
    bool CheckAdxFilter(ENUM_ORDER_TYPE signalType);
@@ -88,10 +96,32 @@ public:
       // ---- 区间上沿做空 ----
       if(ctx.bid >= tradeHigh - tolerance)
       {
+         Print(StringFormat(
+            "[RangeEdgeReversion] 候选信号 | side=SELL | phase=edge-check | regime=%d | bid=%.5f | ask=%.5f | tradeHigh=%.5f | tradeLow=%.5f | mid=%.5f | tolerance=%.2f | slBuffer=%.2f | obsBars=%d | tradeBars=%d",
+            ctx.regime,
+            ctx.bid,
+            ctx.ask,
+            tradeHigh,
+            tradeLow,
+            mid,
+            tolerance,
+            slBuffer,
+            obsBars,
+            tradeBars
+         ));
+
          // 趋势过滤：做空前检查
          if(!IsTrendFilterPass(OP_SELL))
          {
-            Print("[RangeEdgeReversion] 趋势过滤拒绝做空信号（上沿），跳过本次信号");
+            Print(StringFormat(
+               "[RangeEdgeReversion] 信号拒绝 | side=SELL | phase=trend-filter | decision=REJECT | reason=TrendFilterBlocked | regime=%d | bid=%.5f | ask=%.5f | tradeHigh=%.5f | tradeLow=%.5f | tolerance=%.2f",
+               ctx.regime,
+               ctx.bid,
+               ctx.ask,
+               tradeHigh,
+               tradeLow,
+               tolerance
+            ));
             return false;
          }
 
@@ -110,10 +140,32 @@ public:
       // ---- 区间下沿做多 ----
       if(ctx.ask <= tradeLow + tolerance)
       {
+         Print(StringFormat(
+            "[RangeEdgeReversion] 候选信号 | side=BUY | phase=edge-check | regime=%d | bid=%.5f | ask=%.5f | tradeHigh=%.5f | tradeLow=%.5f | mid=%.5f | tolerance=%.2f | slBuffer=%.2f | obsBars=%d | tradeBars=%d",
+            ctx.regime,
+            ctx.bid,
+            ctx.ask,
+            tradeHigh,
+            tradeLow,
+            mid,
+            tolerance,
+            slBuffer,
+            obsBars,
+            tradeBars
+         ));
+
          // 趋势过滤：做多前检查
          if(!IsTrendFilterPass(OP_BUY))
          {
-            Print("[RangeEdgeReversion] 趋势过滤拒绝做多信号（下沿），跳过本次信号");
+            Print(StringFormat(
+               "[RangeEdgeReversion] 信号拒绝 | side=BUY | phase=trend-filter | decision=REJECT | reason=TrendFilterBlocked | regime=%d | bid=%.5f | ask=%.5f | tradeHigh=%.5f | tradeLow=%.5f | tolerance=%.2f",
+               ctx.regime,
+               ctx.bid,
+               ctx.ask,
+               tradeHigh,
+               tradeLow,
+               tolerance
+            ));
             return false;
          }
 
@@ -178,8 +230,13 @@ bool CStrategyRangeEdgeReversion::CheckPriceStructureFilter(ENUM_ORDER_TYPE sign
 
       if(consecutiveCount >= threshold)
       {
-         Print("[RangeEdgeReversion] 趋势过滤-价格结构：拒绝做多，连续新低 ",
-               consecutiveCount, "/", window, " 根");
+         Print(StringFormat(
+            "[RangeEdgeReversion] 趋势过滤 | filter=PriceStructure | side=%s | decision=REJECT | consecutiveLow=%d | window=%d | threshold=%d",
+            SideToString(signalType),
+            consecutiveCount,
+            window,
+            threshold
+         ));
          return false;
       }
    }
@@ -194,8 +251,13 @@ bool CStrategyRangeEdgeReversion::CheckPriceStructureFilter(ENUM_ORDER_TYPE sign
 
       if(consecutiveCount >= threshold)
       {
-         Print("[RangeEdgeReversion] 趋势过滤-价格结构：拒绝做空，连续新高 ",
-               consecutiveCount, "/", window, " 根");
+         Print(StringFormat(
+            "[RangeEdgeReversion] 趋势过滤 | filter=PriceStructure | side=%s | decision=REJECT | consecutiveHigh=%d | window=%d | threshold=%d",
+            SideToString(signalType),
+            consecutiveCount,
+            window,
+            threshold
+         ));
          return false;
       }
    }
@@ -223,10 +285,14 @@ bool CStrategyRangeEdgeReversion::CheckEmaFilter(ENUM_ORDER_TYPE signalType)
    {
       if(emaFast < emaSlow)
       {
-         Print("[RangeEdgeReversion] 趋势过滤-EMA：拒绝做多，EMA", InpEmaFastPeriod,
-               "=", DoubleToStr(emaFast, Digits),
-               " < EMA", InpEmaSlowPeriod, "=", DoubleToStr(emaSlow, Digits),
-               " (空头排列)");
+         Print(StringFormat(
+            "[RangeEdgeReversion] 趋势过滤 | filter=EMA | side=%s | decision=REJECT | emaFastPeriod=%d | emaSlowPeriod=%d | emaFast=%.5f | emaSlow=%.5f | relation=emaFast<emaSlow",
+            SideToString(signalType),
+            InpEmaFastPeriod,
+            InpEmaSlowPeriod,
+            emaFast,
+            emaSlow
+         ));
          return false;
       }
    }
@@ -234,10 +300,14 @@ bool CStrategyRangeEdgeReversion::CheckEmaFilter(ENUM_ORDER_TYPE signalType)
    {
       if(emaFast > emaSlow)
       {
-         Print("[RangeEdgeReversion] 趋势过滤-EMA：拒绝做空，EMA", InpEmaFastPeriod,
-               "=", DoubleToStr(emaFast, Digits),
-               " > EMA", InpEmaSlowPeriod, "=", DoubleToStr(emaSlow, Digits),
-               " (多头排列)");
+         Print(StringFormat(
+            "[RangeEdgeReversion] 趋势过滤 | filter=EMA | side=%s | decision=REJECT | emaFastPeriod=%d | emaSlowPeriod=%d | emaFast=%.5f | emaSlow=%.5f | relation=emaFast>emaSlow",
+            SideToString(signalType),
+            InpEmaFastPeriod,
+            InpEmaSlowPeriod,
+            emaFast,
+            emaSlow
+         ));
          return false;
       }
    }
@@ -273,9 +343,14 @@ bool CStrategyRangeEdgeReversion::CheckAdxFilter(ENUM_ORDER_TYPE signalType)
    {
       if(emaBearish)
       {
-         Print("[RangeEdgeReversion] 趋势过滤-ADX：拒绝做多，ADX=",
-               DoubleToStr(adx, 2), " > ", DoubleToStr(InpAdxThreshold, 2),
-               " 且EMA空头排列（逆势）");
+         Print(StringFormat(
+            "[RangeEdgeReversion] 趋势过滤 | filter=ADX | side=%s | decision=REJECT | adx=%.2f | adxThreshold=%.2f | emaFast=%.5f | emaSlow=%.5f | relation=emaBearish",
+            SideToString(signalType),
+            adx,
+            InpAdxThreshold,
+            emaFast,
+            emaSlow
+         ));
          return false;
       }
    }
@@ -283,9 +358,14 @@ bool CStrategyRangeEdgeReversion::CheckAdxFilter(ENUM_ORDER_TYPE signalType)
    {
       if(emaBullish)
       {
-         Print("[RangeEdgeReversion] 趋势过滤-ADX：拒绝做空，ADX=",
-               DoubleToStr(adx, 2), " > ", DoubleToStr(InpAdxThreshold, 2),
-               " 且EMA多头排列（逆势）");
+         Print(StringFormat(
+            "[RangeEdgeReversion] 趋势过滤 | filter=ADX | side=%s | decision=REJECT | adx=%.2f | adxThreshold=%.2f | emaFast=%.5f | emaSlow=%.5f | relation=emaBullish",
+            SideToString(signalType),
+            adx,
+            InpAdxThreshold,
+            emaFast,
+            emaSlow
+         ));
          return false;
       }
    }
