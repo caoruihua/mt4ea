@@ -173,6 +173,22 @@ public:
             return;
 
          double newSl = NormalizeDouble(openPrice + offset, ctx.digits);
+
+         // 阶梯推进止损（封顶 +15）：
+         // 浮盈>=10 -> 锁+5；浮盈>=15 -> 锁+10；浮盈>=20 -> 锁+15
+         if(floating >= 10.0)
+         {
+            int stepLevel = (int)MathFloor((floating - 10.0) / 5.0) + 1;
+            if(stepLevel < 1)
+               stepLevel = 1;
+            if(stepLevel > 3)
+               stepLevel = 3;
+
+            double stepSl = NormalizeDouble(openPrice + stepLevel * 5.0, ctx.digits);
+            if(stepSl > newSl)
+               newSl = stepSl;
+         }
+
          // 仅允许止损朝有利方向移动
          if(oldSl > 0 && newSl <= oldSl + Point)
             return;
@@ -180,7 +196,7 @@ public:
             return;
 
          if(OrderModify(ticket, openPrice, newSl, tp, 0, clrNONE) && m_logger != NULL)
-            m_logger.Info(StringFormat("全局锁利生效 #%d BUY oldSL=%.5f newSL=%.5f trigger=%.2f", ticket, oldSl, newSl, trigger));
+            m_logger.Info(StringFormat("全局锁利/阶梯止损生效 #%d BUY oldSL=%.5f newSL=%.5f floating=%.2f trigger=%.2f", ticket, oldSl, newSl, floating, trigger));
       }
       else if(OrderType() == OP_SELL)
       {
@@ -189,6 +205,22 @@ public:
             return;
 
          double newSl = NormalizeDouble(openPrice - offset, ctx.digits);
+
+         // 阶梯推进止损（封顶 +15）：
+         // 浮盈>=10 -> 锁+5；浮盈>=15 -> 锁+10；浮盈>=20 -> 锁+15
+         if(floating >= 10.0)
+         {
+            int stepLevel = (int)MathFloor((floating - 10.0) / 5.0) + 1;
+            if(stepLevel < 1)
+               stepLevel = 1;
+            if(stepLevel > 3)
+               stepLevel = 3;
+
+            double stepSl = NormalizeDouble(openPrice - stepLevel * 5.0, ctx.digits);
+            if(stepSl < newSl)
+               newSl = stepSl;
+         }
+
          // 仅允许止损朝有利方向移动
          if(oldSl > 0 && newSl >= oldSl - Point)
             return;
@@ -196,7 +228,7 @@ public:
             return;
 
          if(OrderModify(ticket, openPrice, newSl, tp, 0, clrNONE) && m_logger != NULL)
-            m_logger.Info(StringFormat("全局锁利生效 #%d SELL oldSL=%.5f newSL=%.5f trigger=%.2f", ticket, oldSl, newSl, trigger));
+            m_logger.Info(StringFormat("全局锁利/阶梯止损生效 #%d SELL oldSL=%.5f newSL=%.5f floating=%.2f trigger=%.2f", ticket, oldSl, newSl, floating, trigger));
       }
    }
 
