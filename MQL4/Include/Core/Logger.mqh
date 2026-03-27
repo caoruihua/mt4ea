@@ -39,10 +39,10 @@ public:
          Print("[", level, "] ", message);
    }
 
-   void Info(string message)    { if(m_level >= 1) Log("INFO", message); }
-   void Debug(string message)   { if(m_level >= 2) Log("DEBUG", message); }
-   void Warning(string message) { Log("WARNING", message); }
-   void Error(string message)   { Log("ERROR", message); }
+   void Info(string message)    { if(m_level >= 1) Log("信息", message); }
+   void Debug(string message)   { if(m_level >= 2) Log("调试", message); }
+   void Warning(string message) { Log("警告", message); }
+   void Error(string message)   { Log("错误", message); }
 };
 
 #endif

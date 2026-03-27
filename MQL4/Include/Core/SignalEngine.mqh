@@ -37,6 +37,24 @@ public:
       return val;
    }
 
+   double GetATR(int shift)
+   {
+      ResetLastError();
+      double val = iATR(Symbol(), PERIOD_M5, 14, shift);
+      if(GetLastError() != 0)
+         return -1.0;
+      return val;
+   }
+
+   double GetADX(int shift)
+   {
+      ResetLastError();
+      double val = iADX(Symbol(), PERIOD_M5, 14, PRICE_CLOSE, MODE_MAIN, shift);
+      if(GetLastError() != 0)
+         return -1.0;
+      return val;
+   }
+
    void BuildSLTP(int orderType, double slUsd, double tpUsd, int digits, double &sl, double &tp)
    {
       if(orderType == OP_BUY)

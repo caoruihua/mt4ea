@@ -15,6 +15,12 @@ class CRiskManager
 public:
    bool CheckCircuitBreaker(StrategyContext &ctx, RuntimeState &state)
    {
+      if(state.dailyPriceDelta >= ctx.dailyPriceDeltaTarget)
+      {
+         state.circuitBreakerActive = true;
+         return true;
+      }
+
       if(state.dailyProfit >= ctx.profitThresholdUsd)
       {
          state.circuitBreakerActive = true;
@@ -52,7 +58,13 @@ public:
       datetime currentDate = DateOnly(bjTime);
       state.dailyProfit = 0.0;
       state.dailyLoss = 0.0;
+      state.dailyPriceDelta = 0.0;
       state.circuitBreakerActive = false;
+      state.rangeHigh = 0.0;
+      state.rangeLow = 0.0;
+      state.breakoutLevel = 0.0;
+      state.breakoutDirection = 0;
+      state.breakoutRetestActive = false;
       state.asianHigh = 0.0;
       state.asianLow = 0.0;
       state.euroBreakoutState = 0;
@@ -72,6 +84,11 @@ public:
       state.channelTrades = 0;
       state.fakeBreakoutLow = 0.0;
       state.fakeBreakoutHigh = 0.0;
+      state.rangeHigh = 0.0;
+      state.rangeLow = 0.0;
+      state.breakoutLevel = 0.0;
+      state.breakoutDirection = 0;
+      state.breakoutRetestActive = false;
       state.asianRangeDate = 0;
       state.countersResetDate = currentDate;
    }

@@ -7,7 +7,7 @@
 
 ## 1. 目录结构
 
-```text
+```
 MQL4/
 ├── Experts/
 │   └── StrategySelector.mq4
@@ -31,7 +31,8 @@ MQL4/
         ├── StrategyOscillation.mqh
         ├── StrategyBreakout.mqh
         ├── StrategyReversal.mqh
-        └── StrategySlopeChannel.mqh
+        ├── StrategySlopeChannel.mqh
+        └── StrategyRangeEdgeReversion.mqh
 ```
 
 ---
@@ -51,19 +52,20 @@ MQL4/
 - **SessionClock.mqh**：北京时间换算 + 会话识别
 - **SignalEngine.mqh**：指标读取（EMA/RSI/MACD）+ SL/TP构建
 - **StateStore.mqh**：运行态持久化（EA_State.txt）
-- **StateStabilizer.mqh**：状态防抖
+- **StateStabilizer.mqh**：状态防抖（状态需连续出现2次才确认切换）
 - **StrategyBase.mqh**：策略接口与信号初始化
 - **MarketState.mqh**：市场状态识别（趋势/震荡/突破/反转）
 - **RiskManager.mqh**：熔断与日内重置
-- **TradeExecutor.mqh**：统一下单/平仓执行
+- **TradeExecutor.mqh**：统一下单/平仓执行（含移动保护、全局锁利）
 - **StrategyRegistry.mqh**：策略注册与优先级选择
 
 ### Strategies
-- **StrategyLinearTrend**：Session1/3，EMA+RSI+MACD 同向确认
+- **StrategyLinearTrend**：Session1/3，EMA+RSI+MACD 同向确认，固定点数 SL/TP
 - **StrategyOscillation**：Session4，亚盘区间边界反转
-- **StrategyBreakout**：Session2/5/6，突破与动量跟随
+- **StrategyBreakout**：Session2/5/6，突破与动量跟随，固定点数 SL/TP
 - **StrategyReversal**：Session5，假突破反转 + EMA回踩
 - **StrategySlopeChannel**：08:00-15:00 斜率平行通道策略（独立SL/TP）
+- **StrategyRangeEdgeReversion**：震荡区间边界反转，结构止损+中轴止盈，含趋势过滤
 
 ---
 
@@ -72,6 +74,9 @@ MQL4/
 - `TimeZoneOffset`：服务器时间偏移到北京时间（通常 6）
 - `MagicNumber`：订单标识，避免与其他EA冲突
 - `LogLevel`：日志级别（0/1/2）
+- `EnableGlobalProfitLockStop`：是否启用全局浮盈锁利
+- `GlobalProfitLockTriggerUsd`：浮盈达到后触发锁利
+- `GlobalProfitLockOffsetUsd`：锁利止损相对开仓价偏移
 
 价格差参数均为**图表价格差美元**（非点数）。
 
@@ -99,25 +104,28 @@ MQL4/
 - `Channel_SL_USD / Channel_TP_USD`：斜率通道策略独立止损止盈
 - `Channel_MaxTradesPerDay`：斜率通道日内最大交易次数
 
+区间边界反转策略（独立参数，含趋势过滤）：
+
+- `RangeEdge_Observation_Bars`：观察窗（结构识别，默认30）
+- `RangeEdge_Trading_Bars`：交易区间窗（HH/LL/Mid，默认20）
+- `RangeEdge_EntryTolerance_USD`：边界接近容差
+- `RangeEdge_SL_Buffer_USD`：区间外侧止损缓冲
+- `RangeEdge_EnableProtection`：是否启用移动保护
+- `RangeEdge_Protection_Trigger_USD`：达到浮盈阈值触发保护
+- `RangeEdge_Protection_Lock_USD`：保护后锁定利润（或保本=0）
+
+影线拒绝突破策略（独立参数）：
+
+- `Wick_Window_Bars`：影线统计窗口
+- `Wick_Min_Upper_Ratio / Wick_Min_Lower_Ratio`：长上/下影最小占比
+- `Wick_Min_Length_USD`：影线最小绝对长度
+- `Wick_Min_Count`：窗口内最少有效影线次数
+- `Wick_Break_Tolerance_USD`：突破/跌破判定容差
+- `Wick_SL_USD / Wick_TP_USD`：影线策略独立止损止盈
+
 ---
 
-## 3.2 最新执行规则与默认参数（已落地）
-
-- **区间高低点策略（StrategyOscillation）**：仅在 `10:00-15:00` 执行
-- **斜率策略（StrategySlopeChannel）**：在 `08:00-15:00` 执行
-- 在 `10:00-15:00` 内若触及日内高/低点：
-  - 区间高低点策略优先（priority=20）
-  - 斜率策略次级（priority=13）
-
-关键默认参数：
-
-- `Session6_MinBody_USD = 4.5`
-- `Channel_SL_USD = 4.0`
-- `Channel_TP_USD = 4.0`
-
----
-
-## 3.1 日内K线判定窗口（你关心的“最近几根K线”）
+## 3.1 日内K线判定窗口
 
 当前版本的信号判定，主要基于**最近 1~2 根已收盘K线**（必要时结合当前K线）：
 
@@ -132,15 +140,16 @@ MQL4/
 - **StrategyBreakout**：
   - Session2 用 `Open[1]/Close[1]` 判断首根5分钟K方向
   - Session5 用 `Close[1] + Close[2]` 做有效突破确认
-  - Session6 用最近两根K（`[1]、[2]`）做动量确认
+  - Session6 用最近两根K（`[1]`、`[2]`）做动量确认
 - **StrategyReversal**：先记录当前假突破，再用 `Close[1]` 回到区间内确认反转
 
-如果你后面要改成“看最近 N 根K线”，建议下一步我给你加两个可调参数：
+---
 
-- `RegimeLookbackBars`（状态识别回看K线数）
-- `SignalConfirmBars`（信号确认K线数）
+## 3.2 执行规则
 
-这样可以在参数面板直接调，不需要改代码。
+- **区间边界反转（RangeEdgeReversion）**：仅在 `REGIME_RANGE` 状态下执行
+- **斜率通道（StrategySlopeChannel）**：在 `08:00-15:00` 执行
+- 在触及日内高/低点时：区间反转优先（priority=14），斜率策略次级
 
 ---
 
@@ -175,35 +184,91 @@ MQL4/
 
 ---
 
-## 7. 两连动量 EA（M5）最新变更说明
+## 7. StrategyRangeEdgeReversion 趋势过滤说明（2026-03-27）
+
+文件：`MQL4/Include/Strategies/StrategyRangeEdgeReversion.mqh`
+
+### 7.1 问题背景
+
+当市场处于明显单边趋势（如下跌通道）时，`MarketState` 可能将趋势误判为震荡（REGIME_RANGE），导致 `RangeEdgeReversion` 在区间下沿附近持续生成做多信号，造成连续止损。
+
+### 7.2 解决方案：三层趋势过滤
+
+在入场前置条件中增加三层过滤，全部通过才允许开仓：
+
+**第一层：价格结构过滤（主要）**
+- 检查最近 N 根K线是否存在连续新低/新高
+- 做多：最近 N 根持续创新低 → 禁止
+- 做空：最近 N 根持续创新高 → 禁止
+- 参数：`InpTrendFilterWindow`（默认5）、`InpTrendFilterThreshold`（默认3）
+
+**第二层：EMA 方向过滤（辅助）**
+- EMA20 < EMA50 → 空头排列，禁止做多
+- EMA20 > EMA50 → 多头排列，禁止做空
+- 参数：`InpEnableEmaFilter`（默认true）、`InpEmaFastPeriod`（默认20）、`InpEmaSlowPeriod`（默认50）
+
+**第三层：ADX 强度过滤（可选，默认关闭）**
+- ADX > 阈值且趋势方向与入场相反 → 禁止逆势入场
+- 参数：`InpEnableAdxFilter`（默认false）、`InpAdxThreshold`（默认25）
+
+### 7.3 总开关
+
+- `InpEnableTrendFilter`（默认true）：趋势过滤总开关，关闭后跳过所有过滤层
+
+### 7.4 日志示例
+
+过滤触发时会输出带中文的日志：
+```
+[RangeEdgeReversion] 趋势过滤-价格结构：拒绝做多，连续新低 4/5 根
+[RangeEdgeReversion] 趋势过滤-EMA：拒绝做多，EMA20=2990.50 < EMA50=2991.20 (空头排列)
+[RangeEdgeReversion] 趋势过滤拒绝做多信号（下沿），跳过本次信号
+```
+
+---
+
+## 8. TradeExecutor 移动保护与全局锁利说明
+
+### 8.1 移动保护（仅 RangeEdgeReversion）
+
+- 浮盈达到 `RangeEdge_Protection_Trigger_USd` 后
+- 将止损移动到 `开仓价 + lockUsd`（保本或微利）
+- 仅针对 comment 含 "RangeEdgeReversion" 的订单
+- 通过 `ApplyProtectionIfNeeded()` 在每次 OnTick 检查
+
+### 8.2 全局锁利（所有策略）
+
+- 浮盈达到 `GlobalProfitLockTriggerUsd` 后
+- 将止损移动到 `开仓价 ± offset`
+- 针对所有策略订单
+- 通过 `ApplyGlobalProfitLockIfNeeded()` 在每次 OnTick 检查
+
+---
+
+## 9. 两连动量 EA（M5）最新变更说明
 
 文件：`MQL4/Experts/伦敦金两连动量EA_M5.mq4`
 
-已新增“按北京时间日封顶收手”与“日统计日志”能力：
-
-### 7.1 日封顶（按价格差，不按美元盈亏）
+### 9.1 日封顶（按价格差，不按美元盈亏）
 
 - 新参数：`DailyPriceTargetUsd = 50.0`
 - 统计口径（仅本EA、当前品种、当前 MagicNumber、已平仓订单）：
   - Buy：`OrderClosePrice - OrderOpenPrice`
   - Sell：`OrderOpenPrice - OrderClosePrice`
-- 采用“净累计”方式（亏损会抵消盈利）。
+- 采用"净累计"方式（亏损会抵消盈利）。
 - 当北京时间当日累计净价格差 `>= DailyPriceTargetUsd` 时，当日停止开新仓（不强平已有持仓）。
 
-### 7.2 北京时间自然日统计
+### 9.2 北京时间自然日统计
 
 - 按北京时间 `00:00:00 ~ 23:59:59` 作为一天。
 - 通过服务器时间与 GMT 偏移换算，避免券商服务器时区差异影响统计结果。
 
-### 7.3 日志能力（新增）
+### 9.3 日志能力（新增）
 
 - `EnableDailySummaryLog = true`
-  - 北京时间跨日时输出“昨日汇总”：
-  - 昨日净价格差 + 昨日美元净盈亏（`OrderProfit + OrderSwap + OrderCommission`）
+  - 北京时间跨日时输出"昨日汇总"：净价格差 + 美元净盈亏
 - `EnablePerBarDailyStats = false`
-  - 可选每根新K线输出“今日净价格差 + 今日美元净盈亏”（建议仅调试开启）
-- 达到日封顶时会输出一次封顶日志（带当前净价格差、美元净盈亏与目标值）。
+  - 可选每根新K线输出"今日净价格差 + 今日美元净盈亏"（建议仅调试开启）
 
-### 7.4 编译验证
+### 9.4 编译验证
 
 - `compile_two_bar_momentum_m5.log`：`0 errors, 0 warnings`

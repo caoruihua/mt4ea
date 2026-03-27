@@ -13,23 +13,106 @@
 class CMarketStateEngine
 {
 public:
-   MarketRegime Detect(StrategyContext &ctx)
+   MarketRegime Detect(StrategyContext &ctx, RuntimeState &state)
    {
-      double c1 = Close[1];
-      double h2 = High[2];
-      double l2 = Low[2];
+      int lookback = 30;
+      if(Bars <= lookback + 5)
+         return REGIME_UNKNOWN;
 
-      if(c1 > h2 + 2.0 || c1 < l2 - 2.0)
-         return REGIME_BREAKOUT;
+      double highest = High[1];
+      double lowest = Low[1];
+      for(int i = 2; i <= lookback; i++)
+      {
+         if(High[i] > highest) highest = High[i];
+         if(Low[i] < lowest) lowest = Low[i];
+      }
 
-      if(ctx.ema20 > ctx.ema50 && ctx.rsi > 52 && ctx.macd > 0)
+      state.rangeHigh = highest;
+      state.rangeLow = lowest;
+
+      double rangeWidth = highest - lowest;
+      double atr = ctx.atr14;
+      double close1 = Close[1];
+      double close2 = Close[2];
+      double ema20Prev = iMA(Symbol(), PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 3);
+      double ema50Prev = iMA(Symbol(), PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE, 3);
+      double ema20Slope = ctx.ema20 - ema20Prev;
+      double ema50Slope = ctx.ema50 - ema50Prev;
+
+      bool risingStructure = (High[1] > High[2] && High[2] > High[3] && Low[1] > Low[2] && Low[2] > Low[3]);
+      bool fallingStructure = (High[1] < High[2] && High[2] < High[3] && Low[1] < Low[2] && Low[2] < Low[3]);
+      bool rangeCandidate = (ctx.adx14 > 0 && ctx.adx14 < 18.0 && atr > 0 && rangeWidth <= atr * 3.5);
+
+      if(state.breakoutRetestActive)
+      {
+         double buffer = MathMax(atr * 0.15, 0.5);
+
+         if(state.breakoutDirection > 0)
+         {
+            if(close1 < state.breakoutLevel - buffer)
+            {
+               state.breakoutRetestActive = false;
+               state.breakoutDirection = 0;
+               state.breakoutLevel = 0.0;
+               return REGIME_RANGE;
+            }
+
+            if(Low[1] <= state.breakoutLevel + buffer && close1 > state.breakoutLevel + buffer && ctx.ema20 > ctx.ema50)
+            {
+               state.breakoutRetestActive = false;
+               return REGIME_TREND_UP;
+            }
+
+            return REGIME_BREAKOUT_SETUP_UP;
+         }
+
+         if(state.breakoutDirection < 0)
+         {
+            if(close1 > state.breakoutLevel + buffer)
+            {
+               state.breakoutRetestActive = false;
+               state.breakoutDirection = 0;
+               state.breakoutLevel = 0.0;
+               return REGIME_RANGE;
+            }
+
+            if(High[1] >= state.breakoutLevel - buffer && close1 < state.breakoutLevel - buffer && ctx.ema20 < ctx.ema50)
+            {
+               state.breakoutRetestActive = false;
+               return REGIME_TREND_DOWN;
+            }
+
+            return REGIME_BREAKOUT_SETUP_DOWN;
+         }
+      }
+
+      if(rangeCandidate)
+      {
+         double breakoutBuffer = MathMax(atr * 0.25, 1.0);
+         if(close1 > highest + breakoutBuffer && close2 <= highest + breakoutBuffer)
+         {
+            state.breakoutRetestActive = true;
+            state.breakoutDirection = 1;
+            state.breakoutLevel = highest;
+            return REGIME_BREAKOUT_SETUP_UP;
+         }
+
+         if(close1 < lowest - breakoutBuffer && close2 >= lowest - breakoutBuffer)
+         {
+            state.breakoutRetestActive = true;
+            state.breakoutDirection = -1;
+            state.breakoutLevel = lowest;
+            return REGIME_BREAKOUT_SETUP_DOWN;
+         }
+
+         return REGIME_RANGE;
+      }
+
+      if(risingStructure && ctx.ema20 > ctx.ema50 && ema20Slope > 0 && ema50Slope >= 0 && ctx.adx14 >= 18.0)
          return REGIME_TREND_UP;
 
-      if(ctx.ema20 < ctx.ema50 && ctx.rsi < 48 && ctx.macd < 0)
+      if(fallingStructure && ctx.ema20 < ctx.ema50 && ema20Slope < 0 && ema50Slope <= 0 && ctx.adx14 >= 18.0)
          return REGIME_TREND_DOWN;
-
-      if((ctx.rsi > 70 && ctx.macd < 0) || (ctx.rsi < 30 && ctx.macd > 0))
-         return REGIME_REVERSAL;
 
       return REGIME_RANGE;
    }

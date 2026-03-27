@@ -10,11 +10,11 @@
 enum MarketRegime
 {
    REGIME_UNKNOWN = 0,
-   REGIME_TREND_UP,
-   REGIME_TREND_DOWN,
    REGIME_RANGE,
-   REGIME_BREAKOUT,
-   REGIME_REVERSAL
+   REGIME_BREAKOUT_SETUP_UP,
+   REGIME_BREAKOUT_SETUP_DOWN,
+   REGIME_TREND_UP,
+   REGIME_TREND_DOWN
 };
 
 enum StrategyId
@@ -24,7 +24,9 @@ enum StrategyId
    STRATEGY_OSCILLATION,
    STRATEGY_BREAKOUT,
    STRATEGY_REVERSAL,
-   STRATEGY_SLOPE_CHANNEL
+   STRATEGY_SLOPE_CHANNEL,
+   STRATEGY_RANGE_EDGE_REVERSION,
+   STRATEGY_WICK_REJECTION
 };
 
 struct StrategyContext
@@ -43,6 +45,8 @@ struct StrategyContext
    double   ema50;          // EMA50
    double   rsi;            // RSI(14)
    double   macd;           // MACD主线
+   double   atr14;          // ATR(14)
+   double   adx14;          // ADX(14)
 
    datetime beijingTime;    // 北京时间
    int      sessionId;      // 会话ID（1~6）
@@ -51,8 +55,16 @@ struct StrategyContext
    double   fixedLots;            // 固定手数
    double   profitThresholdUsd;   // 日盈利熔断阈值
    double   lossThresholdPercent; // 日亏损熔断阈值（百分比）
+   double   dailyPriceDeltaTarget;// 当日累计获利价格差停手阈值
    int      slippage;             // 允许滑点
    int      maxRetries;           // 重试次数
+   bool     useAtrStopBuffer;     // 是否使用ATR缓冲
+   double   slBufferAtrMultiplier;// 止损ATR缓冲倍数
+   double   slBufferFixedUsd;     // 固定止损缓冲
+   double   riskRewardRatio;      // 固定盈亏比
+   bool     enable_global_profit_lock;      // 是否启用全局浮盈锁利止损
+   double   global_profit_lock_trigger_usd; // 触发锁利的最小浮盈
+   double   global_profit_lock_offset_usd;  // 锁利止损相对开仓价偏移
 
    // Price-distance params (USD on chart price)
    double session1_3_sl_usd;
@@ -82,13 +94,38 @@ struct StrategyContext
    double channel_sl_usd;
    double channel_tp_usd;
    int    channel_max_trades_per_day;
+
+   // Range-edge reversion strategy params
+   int    range_edge_observation_bars;
+   int    range_edge_trading_bars;
+   double range_edge_entry_tolerance_usd;
+   double range_edge_sl_buffer_usd;
+   bool   range_edge_enable_protection;
+   double range_edge_protection_trigger_usd;
+   double range_edge_protection_lock_usd;
+
+   // Wick rejection strategy params
+   int    wick_window_bars;
+   double wick_min_upper_ratio;
+   double wick_min_lower_ratio;
+   double wick_min_length_usd;
+   int    wick_min_count;
+   double wick_break_tolerance_usd;
+   double wick_sl_usd;
+   double wick_tp_usd;
 };
 
 struct RuntimeState
 {
    double   dailyProfit;          // 当日已实现盈利
    double   dailyLoss;            // 当日已实现亏损
+   double   dailyPriceDelta;      // 当日累计获利价格差（仅累计正向已实现价格差）
    bool     circuitBreakerActive; // 熔断开关
+   double   rangeHigh;            // 当前震荡区间高点
+   double   rangeLow;             // 当前震荡区间低点
+   double   breakoutLevel;        // 突破参考线
+   int      breakoutDirection;    // 突破方向：1上破/-1下破/0无
+   bool     breakoutRetestActive; // 是否处于回踩确认阶段
    double   asianHigh;            // 亚盘高点
    double   asianLow;             // 亚盘低点
    int      euroBreakoutState;    // 欧盘突破方向：0无/1多/2空
@@ -104,6 +141,8 @@ struct RuntimeState
    double   fakeBreakoutHigh;
    datetime countersResetDate;
    datetime asianRangeDate;
+   datetime lastEntryBarTime;        // 最近一次成功开仓所在K线时间
+   datetime lastEntryAttemptBarTime; // 最近一次尝试开仓所在K线时间（成功/失败都记录）
 };
 
 struct TradeSignal
