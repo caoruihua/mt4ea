@@ -1,274 +1,310 @@
-# 模块化 MQL4 EA 使用说明（StrategySelector）
+# StrategySelector 当前实现说明
 
-> 本文档对应新架构 `MQL4/Experts/StrategySelector.mq4`。
-> 旧文件 `XAUUSD_MultiSession_Strategy.mq4` 保留不变，可继续作为回退版本。
+本仓库当前实际运行入口是 `MQL4/Experts/StrategySelector.mq4`。
 
----
+这份 README 只描述当前代码里已经接入执行链的逻辑，不再沿用早期多 session 策略总览里的过期描述。
 
-## 1. 目录结构
+## 1. 当前架构
 
-```
+```text
 MQL4/
-├── Experts/
-│   └── StrategySelector.mq4
-│
-└── Include/
-    ├── Core/
-    │   ├── Types.mqh
-    │   ├── Logger.mqh
-    │   ├── SessionClock.mqh
-    │   ├── SignalEngine.mqh
-    │   ├── StateStore.mqh
-    │   ├── StateStabilizer.mqh
-    │   ├── StrategyBase.mqh
-    │   ├── MarketState.mqh
-    │   ├── RiskManager.mqh
-    │   ├── TradeExecutor.mqh
-    │   └── StrategyRegistry.mqh
-    │
-    └── Strategies/
-        ├── StrategyLinearTrend.mqh
-        ├── StrategyOscillation.mqh
-        ├── StrategyBreakout.mqh
-        ├── StrategyReversal.mqh
-        ├── StrategySlopeChannel.mqh
-        └── StrategyRangeEdgeReversion.mqh
+├─ Experts/
+│  └─ StrategySelector.mq4
+└─ Include/
+   ├─ Core/
+   │  ├─ Types.mqh
+   │  ├─ Logger.mqh
+   │  ├─ SessionClock.mqh
+   │  ├─ SignalEngine.mqh
+   │  ├─ StateStore.mqh
+   │  ├─ StateStabilizer.mqh
+   │  ├─ MarketState.mqh
+   │  ├─ RiskManager.mqh
+   │  ├─ TradeExecutor.mqh
+   │  ├─ StrategyBase.mqh
+   │  └─ StrategyRegistry.mqh
+   └─ Strategies/
+      ├─ StrategyLinearTrend.mqh
+      ├─ StrategyOscillation.mqh
+      ├─ StrategyBreakout.mqh
+      ├─ StrategyReversal.mqh
+      ├─ StrategySlopeChannel.mqh
+      ├─ StrategyRangeEdgeReversion.mqh
+      └─ StrategySpikeMomentum.mqh
 ```
 
----
+## 2. 主流程
 
-## 2. 各模块职责
+`StrategySelector.mq4` 在每个 tick 上的执行顺序如下：
 
-### Experts
-- **StrategySelector.mq4**
-  - EA 入口（OnInit / OnTick / OnDeinit）
-  - 组装核心模块
-  - 收集上下文参数
-  - 调用策略注册器选择最佳信号并执行
+1. `FillContext()`
+   将报价、指标、北京时间、session、风控参数、策略参数写入 `StrategyContext`。
+2. `RiskManager.ResetDailyCounters()`
+   按北京时间自然日重置计数器。
+3. 每日 01:00 重置
+   如果满足条件，平掉当前仓位并清空当日状态。
+4. `TradeExecutor.CheckStopLossTakeProfit()`
+   主动检查当前持仓是否触发 SL/TP。
+5. `RiskManager.CheckCircuitBreaker()`
+   当日盈利、亏损或累计价格位移达到阈值时触发熔断。
+6. `TradeExecutor.ApplyGlobalProfitLockIfNeeded()`
+   对当前持仓应用全局锁盈止损。
+7. `TradeExecutor.ApplyProtectionIfNeeded()`
+   仅对 `RangeEdgeReversion` 持仓应用保护性止损上移。
+8. 指标可用性检查
+   EMA / RSI / MACD / ATR / ADX 缺失时直接跳过。
+9. `MarketState.Detect()` + `StateStabilizer.Stabilize()`
+   先识别原始市场状态，再做稳定化处理。
+10. `StrategyRegistry.EvaluateBestSignal()`
+    统一评估当前已注册策略，返回最高优先级信号。
+11. 若已有持仓则不再开新单；否则通过 `TradeExecutor.OpenOrder()` 下单。
 
-### Core
-- **Types.mqh**：公共枚举与结构体（市场状态、策略ID、上下文、运行态、交易信号）
-- **Logger.mqh**：统一日志输出
-- **SessionClock.mqh**：北京时间换算 + 会话识别
-- **SignalEngine.mqh**：指标读取（EMA/RSI/MACD）+ SL/TP构建
-- **StateStore.mqh**：运行态持久化（EA_State.txt）
-- **StateStabilizer.mqh**：状态防抖（状态需连续出现2次才确认切换）
-- **StrategyBase.mqh**：策略接口与信号初始化
-- **MarketState.mqh**：市场状态识别（趋势/震荡/突破/反转）
-- **RiskManager.mqh**：熔断与日内重置
-- **TradeExecutor.mqh**：统一下单/平仓执行（含移动保护、全局锁利）
-- **StrategyRegistry.mqh**：策略注册与优先级选择
+## 3. 当前实际接入的策略集合
 
-### Strategies
-- **StrategyLinearTrend**：Session1/3，EMA+RSI+MACD 同向确认，固定点数 SL/TP
-- **StrategyOscillation**：Session4，亚盘区间边界反转
-- **StrategyBreakout**：Session2/5/6，突破与动量跟随，固定点数 SL/TP
-- **StrategyReversal**：Session5，假突破反转 + EMA回踩
-- **StrategySlopeChannel**：08:00-15:00 斜率平行通道策略（独立SL/TP）
-- **StrategyRangeEdgeReversion**：震荡区间边界反转，结构止损+中轴止盈，含趋势过滤
+当前注册层实际参与评估的只有 6 类候选：
 
----
+1. `TrendFollowLong | id=STRATEGY_LINEAR_TREND | priority=10`
+   不是调用 `StrategyLinearTrend` 模块，而是注册层在 `REGIME_TREND_UP` 下直接构造做多信号。
+2. `TrendFollowShort | id=STRATEGY_BREAKOUT | priority=10`
+   不是调用 `StrategyBreakout` 模块，而是注册层在 `REGIME_TREND_DOWN` 下直接构造做空信号。
+3. `BreakoutRetest | id=STRATEGY_REVERSAL | priority=12`
+   由注册层在突破回踩确认状态下直接构造信号。
+4. `RangeEdgeReversion | id=STRATEGY_RANGE_EDGE_REVERSION | priority=14`
+   通过独立策略文件 `StrategyRangeEdgeReversion.mqh` 评估。
+5. `WickRejection | id=STRATEGY_WICK_REJECTION | priority=13`
+   由注册层内部根据 wick rejection 规则直接构造信号。
+6. `SpikeMomentum | id=STRATEGY_SPIKE_MOMENTUM | priority=15`
+   通过独立策略文件 `StrategySpikeMomentum.mqh` 评估。
 
-## 3. 关键输入参数说明（StrategySelector.mq4）
+优先级从高到低大致为：
 
-- `TimeZoneOffset`：服务器时间偏移到北京时间（通常 6）
-- `MagicNumber`：订单标识，避免与其他EA冲突
-- `LogLevel`：日志级别（0/1/2）
-- `EnableGlobalProfitLockStop`：是否启用全局浮盈锁利
-- `GlobalProfitLockTriggerUsd`：浮盈达到后触发锁利
-- `GlobalProfitLockOffsetUsd`：锁利止损相对开仓价偏移
+- `SpikeMomentum` 15
+- `RangeEdgeReversion` 14
+- `WickRejection` 13
+- `BreakoutRetest` 12
+- `TrendFollowLong/Short` 10
 
-价格差参数均为**图表价格差美元**（非点数）。
+## 4. 当前市场状态逻辑
 
-- `Session1_3_SL_USD / Session1_3_TP_USD`：Session1/3 止损止盈
-- `Session2_SL_USD / Session2_TP_USD`：Session2 止损止盈
-- `Session4_MinRange_USD`：Session4 最小区间宽度
-- `Session4_EntryBuffer_USD`：Session4 边界触发缓冲
-- `Session4_SL_Buffer_USD`：Session4 边界外SL缓冲
-- `Session4_TP_USD`：Session4 止盈
-- `Session5_FakeBreakout_Trigger_USD`：Session5 假突破触发阈值
-- `Session5_ValidBreakout_Trigger_USD`：Session5 真突破触发阈值
-- `Session5_SL_USD / Session5_TP_USD`：Session5 止损止盈
-- `Session5_EMA_Tolerance_USD`：Session5 EMA回踩容差
-- `Session6_MinBody_USD`：Session6 动量实体最小阈值
-- `Session6_SL_USD / Session6_TP_USD`：Session6 止损止盈
+`MarketState.mqh` 当前输出以下状态：
 
-斜率通道策略（独立参数）：
+- `REGIME_UNKNOWN`
+- `REGIME_RANGE`
+- `REGIME_BREAKOUT_SETUP_UP`
+- `REGIME_BREAKOUT_SETUP_DOWN`
+- `REGIME_TREND_UP`
+- `REGIME_TREND_DOWN`
 
-- `Channel_Lookback_Bars`：斜率回看K线数量
-- `Channel_MinSlope`：最小斜率阈值
-- `Channel_ParallelTolerance`：上下轨斜率平行容差
-- `Channel_MaxWidth_USD`：通道平均宽度上限
-- `Channel_EntryTolerance_USD`：靠近通道边界的入场容差
-- `Channel_ADX_Min`：ADX最小阈值（趋势强度过滤）
-- `Channel_SL_USD / Channel_TP_USD`：斜率通道策略独立止损止盈
-- `Channel_MaxTradesPerDay`：斜率通道日内最大交易次数
+判定核心：
 
-区间边界反转策略（独立参数，含趋势过滤）：
+- 使用最近 30 根 K 线的高低点和 ATR 识别区间宽度。
+- 使用 `EMA20 / EMA50 / ADX14` 和近 3 根 K 线结构识别趋势。
+- 当区间内发生向上或向下有效突破时，进入 `BREAKOUT_SETUP_*`。
+- 已记录突破回踩状态时，优先判断回踩是否成立或失效。
+- 最终结果再经过 `StateStabilizer` 稳定化后写回 `ctx.regime`。
 
-- `RangeEdge_Observation_Bars`：观察窗（结构识别，默认30）
-- `RangeEdge_Trading_Bars`：交易区间窗（HH/LL/Mid，默认20）
-- `RangeEdge_EntryTolerance_USD`：边界接近容差
-- `RangeEdge_SL_Buffer_USD`：区间外侧止损缓冲
-- `RangeEdge_EnableProtection`：是否启用移动保护
-- `RangeEdge_Protection_Trigger_USD`：达到浮盈阈值触发保护
-- `RangeEdge_Protection_Lock_USD`：保护后锁定利润（或保本=0）
+## 5. 各策略当前实现
 
-影线拒绝突破策略（独立参数）：
+### 5.1 TrendFollowLong / TrendFollowShort
 
-- `Wick_Window_Bars`：影线统计窗口
-- `Wick_Min_Upper_Ratio / Wick_Min_Lower_Ratio`：长上/下影最小占比
-- `Wick_Min_Length_USD`：影线最小绝对长度
-- `Wick_Min_Count`：窗口内最少有效影线次数
-- `Wick_Break_Tolerance_USD`：突破/跌破判定容差
-- `Wick_SL_USD / Wick_TP_USD`：影线策略独立止损止盈
+这两类不是独立策略类，而是 `StrategyRegistry.mqh` 里的 regime 驱动规则：
 
----
+- `REGIME_TREND_UP` 下，若没有明显连续创新低，构造做多信号。
+- `REGIME_TREND_DOWN` 下，若没有明显连续创新高，构造做空信号。
+- 止损缓冲优先使用 ATR 缓冲，否则使用固定 `SL_Buffer_Fixed_USD`。
+- 止盈按 `TakeProfit_R_Multiple` 计算风险收益比。
 
-## 3.1 日内K线判定窗口
+### 5.2 BreakoutRetest
 
-当前版本的信号判定，主要基于**最近 1~2 根已收盘K线**（必要时结合当前K线）：
+同样由注册层直接生成：
 
-- `Close[1] / Open[1]`：上一根已收盘K线
-- `Close[2] / Open[2]`：上两根已收盘K线
-- `High[2] / Low[2]`：用于短期突破结构参考
-- `Close[0] / High[0] / Low[0]`：当前形成中的K线（仅部分动量/区间更新场景使用）
+- `REGIME_BREAKOUT_SETUP_UP` 且 `breakoutRetestActive=true` 时，若低点回踩突破位附近，构造做多。
+- `REGIME_BREAKOUT_SETUP_DOWN` 且 `breakoutRetestActive=true` 时，若高点回踩突破位附近，构造做空。
 
-对应策略里的典型用法：
-
-- **MarketState**：用 `Close[1]` 对比 `High[2]/Low[2]` 判断短期突破状态
-- **StrategyBreakout**：
-  - Session2 用 `Open[1]/Close[1]` 判断首根5分钟K方向
-  - Session5 用 `Close[1] + Close[2]` 做有效突破确认
-  - Session6 用最近两根K（`[1]`、`[2]`）做动量确认
-- **StrategyReversal**：先记录当前假突破，再用 `Close[1]` 回到区间内确认反转
-
----
-
-## 3.2 执行规则
-
-- **区间边界反转（RangeEdgeReversion）**：仅在 `REGIME_RANGE` 状态下执行
-- **斜率通道（StrategySlopeChannel）**：在 `08:00-15:00` 执行
-- 在触及日内高/低点时：区间反转优先（priority=14），斜率策略次级
-
----
-
-## 4. 部署步骤
-
-1. 打开 MT4：`文件 -> 打开数据文件夹`
-2. 将本项目中的以下内容复制到 MT4 的 `MQL4` 下（可覆盖同名）：
-   - `Experts/StrategySelector.mq4`
-   - `Include/Core/`（整目录）
-   - `Include/Strategies/`（整目录）
-3. 在 MetaEditor 打开 `StrategySelector.mq4`
-4. 点击编译
-
-> 已在当前工程环境验证：`StrategySelector` 编译日志为 `0 errors, 0 warnings`。
-
----
-
-## 5. 运行与回退
-
-- 运行：在 MT4 图表挂载 `StrategySelector` EA
-- 回退：直接切回旧版 `XAUUSD_MultiSession_Strategy.mq4`
-- 两者可共存（MagicNumber 不冲突即可）
-
----
-
-## 6. 后续扩展建议
-
-1. 在 `Core/Types.mqh` 中扩展 `StrategyContext` 字段（如 ATR、布林带）
-2. 新增 `Include/Strategies/StrategyXXX.mqh` 并实现 `IStrategy`
-3. 在 `StrategyRegistry.mqh` 注册新策略并设置优先级
-4. 保持 RiskManager 与 TradeExecutor 统一，不在策略内重复风控/执行代码
-
----
-
-## 7. StrategyRangeEdgeReversion 趋势过滤说明（2026-03-27）
+### 5.3 RangeEdgeReversion
 
 文件：`MQL4/Include/Strategies/StrategyRangeEdgeReversion.mqh`
 
-### 7.1 问题背景
+当前逻辑：
 
-当市场处于明显单边趋势（如下跌通道）时，`MarketState` 可能将趋势误判为震荡（REGIME_RANGE），导致 `RangeEdgeReversion` 在区间下沿附近持续生成做多信号，造成连续止损。
+- 仅在 `REGIME_RANGE` 下允许评估。
+- 使用观察窗口 `RangeEdge_Observation_Bars` 和交易窗口 `RangeEdge_Trading_Bars`。
+- 价格接近交易区间上沿时尝试做空，接近下沿时尝试做多。
+- 止损放在区间外侧：`tradeHigh + SL_Buffer` 或 `tradeLow - SL_Buffer`。
+- 止盈使用区间中轴 `mid = (tradeHigh + tradeLow) / 2`。
 
-### 7.2 解决方案：三层趋势过滤
+当前内置三层趋势过滤：
 
-在入场前置条件中增加三层过滤，全部通过才允许开仓：
+- 价格结构过滤
+- EMA 方向过滤
+- 可选 ADX 过滤
 
-**第一层：价格结构过滤（主要）**
-- 检查最近 N 根K线是否存在连续新低/新高
-- 做多：最近 N 根持续创新低 → 禁止
-- 做空：最近 N 根持续创新高 → 禁止
-- 参数：`InpTrendFilterWindow`（默认5）、`InpTrendFilterThreshold`（默认3）
+对应参数：
 
-**第二层：EMA 方向过滤（辅助）**
-- EMA20 < EMA50 → 空头排列，禁止做多
-- EMA20 > EMA50 → 多头排列，禁止做空
-- 参数：`InpEnableEmaFilter`（默认true）、`InpEmaFastPeriod`（默认20）、`InpEmaSlowPeriod`（默认50）
+- `InpEnableTrendFilter`
+- `InpTrendFilterWindow`
+- `InpTrendFilterThreshold`
+- `InpEnableEmaFilter`
+- `InpEmaFastPeriod`
+- `InpEmaSlowPeriod`
+- `InpEnableAdxFilter`
+- `InpAdxPeriod`
+- `InpAdxThreshold`
 
-**第三层：ADX 强度过滤（可选，默认关闭）**
-- ADX > 阈值且趋势方向与入场相反 → 禁止逆势入场
-- 参数：`InpEnableAdxFilter`（默认false）、`InpAdxThreshold`（默认25）
+### 5.4 WickRejection
 
-### 7.3 总开关
+由 `StrategyRegistry.mqh` 内部直接生成：
 
-- `InpEnableTrendFilter`（默认true）：趋势过滤总开关，关闭后跳过所有过滤层
+- 统计最近 `Wick_Window_Bars` 根 K 线。
+- 如果上沿附近出现足够多的长上影且未有效突破，生成做空。
+- 如果下沿附近出现足够多的长下影且未有效跌破，生成做多。
+- 使用独立的 `Wick_SL_USD / Wick_TP_USD`。
 
-### 7.4 日志示例
+### 5.5 SpikeMomentum
 
-过滤触发时会输出带中文的日志：
-```
-[RangeEdgeReversion] 趋势过滤-价格结构：拒绝做多，连续新低 4/5 根
-[RangeEdgeReversion] 趋势过滤-EMA：拒绝做多，EMA20=2990.50 < EMA50=2991.20 (空头排列)
-[RangeEdgeReversion] 趋势过滤拒绝做多信号（下沿），跳过本次信号
-```
+文件：`MQL4/Include/Strategies/StrategySpikeMomentum.mqh`
 
----
+当前逻辑：
 
-## 8. TradeExecutor 移动保护与全局锁利说明
+- 仅当 `Spike_Enable=true` 时生效。
+- 从 M1 数据中回看最近 `Spike_Window_Seconds` 秒。
+- 计算窗口最高点、最低点与脉冲幅度 `impulse`。
+- 幅度达到 `Spike_Trigger_USD` 后，判断当前价格相对脉冲极值的回吐比例。
+- 若回吐比例不超过 `Spike_Max_Pullback_Ratio`，则按方向跟随入场。
+- 使用固定 `Spike_SL_USD / Spike_TP_USD`。
+- 记录最近一次 spike 事件，避免在同一脉冲上重复触发。
 
-### 8.1 移动保护（仅 RangeEdgeReversion）
+## 6. 当前风控与执行
 
-- 浮盈达到 `RangeEdge_Protection_Trigger_USd` 后
-- 将止损移动到 `开仓价 + lockUsd`（保本或微利）
-- 仅针对 comment 含 "RangeEdgeReversion" 的订单
-- 通过 `ApplyProtectionIfNeeded()` 在每次 OnTick 检查
+### 6.1 熔断
 
-### 8.2 全局锁利（所有策略）
+`RiskManager.mqh` 当前有三类熔断条件：
 
-- 浮盈达到 `GlobalProfitLockTriggerUsd` 后
-- 将止损移动到 `开仓价 ± offset`
-- 针对所有策略订单
-- 通过 `ApplyGlobalProfitLockIfNeeded()` 在每次 OnTick 检查
+- `dailyPriceDelta >= DailyPriceDeltaTargetUsd`
+- `dailyProfit >= PROFIT_THRESHOLD_USD`
+- `dailyLoss >= AccountBalance() * LOSS_THRESHOLD_PERCENT / 100`
 
----
+触发后：
 
-## 9. 两连动量 EA（M5）最新变更说明
+- 标记 `circuitBreakerActive=true`
+- 若当前有持仓则立即平仓
+- 本 tick 不再继续开仓评估
 
-文件：`MQL4/Experts/伦敦金两连动量EA_M5.mq4`
+### 6.2 全局锁盈止损
 
-### 9.1 日封顶（按价格差，不按美元盈亏）
+`TradeExecutor.ApplyGlobalProfitLockIfNeeded()` 当前对所有受管持仓生效：
 
-- 新参数：`DailyPriceTargetUsd = 50.0`
-- 统计口径（仅本EA、当前品种、当前 MagicNumber、已平仓订单）：
-  - Buy：`OrderClosePrice - OrderOpenPrice`
-  - Sell：`OrderOpenPrice - OrderClosePrice`
-- 采用"净累计"方式（亏损会抵消盈利）。
-- 当北京时间当日累计净价格差 `>= DailyPriceTargetUsd` 时，当日停止开新仓（不强平已有持仓）。
+- 浮盈达到 `GlobalProfitLockTriggerUsd` 后，将止损移动到开仓价附近。
+- 当浮盈继续扩大时，代码里还有固定阶梯式推进逻辑：
+  - 浮盈 `>= 10` 时开始阶梯上移
+  - 之后每增加 `5`，最多再上移 3 级
 
-### 9.2 北京时间自然日统计
+### 6.3 RangeEdge 专属保护
 
-- 按北京时间 `00:00:00 ~ 23:59:59` 作为一天。
-- 通过服务器时间与 GMT 偏移换算，避免券商服务器时区差异影响统计结果。
+`TradeExecutor.ApplyProtectionIfNeeded()` 仅对注释中包含 `RangeEdgeReversion` 的订单生效：
 
-### 9.3 日志能力（新增）
+- 浮盈达到 `RangeEdge_Protection_Trigger_USD` 后
+- 将止损上移到开仓价附近
+- 上移幅度由 `RangeEdge_Protection_Lock_USD` 控制
 
-- `EnableDailySummaryLog = true`
-  - 北京时间跨日时输出"昨日汇总"：净价格差 + 美元净盈亏
-- `EnablePerBarDailyStats = false`
-  - 可选每根新K线输出"今日净价格差 + 今日美元净盈亏"（建议仅调试开启）
+### 6.4 主动检查 SL/TP
 
-### 9.4 编译验证
+`TradeExecutor.CheckStopLossTakeProfit()` 会在每个 tick 主动比较当前 Bid/Ask 与订单的 SL/TP：
 
-- `compile_two_bar_momentum_m5.log`：`0 errors, 0 warnings`
+- 触发止损则调用 `CloseOrder()`
+- 触发止盈则调用 `CloseOrder()`
+- 平仓结果会累加到 `dailyProfit / dailyLoss / dailyPriceDelta`
+
+## 7. 参数说明
+
+### 7.1 通用参数
+
+- `TimeZoneOffset`
+- `MagicNumber`
+- `LogLevel`
+- `EnableStrategyHealthReport`
+- `UseAtrStopBuffer`
+- `EnableGlobalProfitLockStop`
+- `GlobalProfitLockTriggerUsd`
+- `GlobalProfitLockOffsetUsd`
+- `SL_Buffer_ATR_Multiplier`
+- `SL_Buffer_Fixed_USD`
+- `TakeProfit_R_Multiple`
+- `DailyPriceDeltaTargetUsd`
+
+### 7.2 RangeEdgeReversion 参数
+
+- `RangeEdge_Observation_Bars`
+- `RangeEdge_Trading_Bars`
+- `RangeEdge_EntryTolerance_USD`
+- `RangeEdge_SL_Buffer_USD`
+- `RangeEdge_EnableProtection`
+- `RangeEdge_Protection_Trigger_USD`
+- `RangeEdge_Protection_Lock_USD`
+
+以及策略文件内部 input：
+
+- `InpEnableTrendFilter`
+- `InpTrendFilterWindow`
+- `InpTrendFilterThreshold`
+- `InpEnableEmaFilter`
+- `InpEmaFastPeriod`
+- `InpEmaSlowPeriod`
+- `InpEnableAdxFilter`
+- `InpAdxPeriod`
+- `InpAdxThreshold`
+
+### 7.3 WickRejection 参数
+
+- `Wick_Window_Bars`
+- `Wick_Min_Upper_Ratio`
+- `Wick_Min_Lower_Ratio`
+- `Wick_Min_Length_USD`
+- `Wick_Min_Count`
+- `Wick_Break_Tolerance_USD`
+- `Wick_SL_USD`
+- `Wick_TP_USD`
+
+### 7.4 SpikeMomentum 参数
+
+- `Spike_Enable`
+- `Spike_Window_Seconds`
+- `Spike_Trigger_USD`
+- `Spike_Max_Pullback_Ratio`
+- `Spike_SL_USD`
+- `Spike_TP_USD`
+- `Spike_Log_Verbose`
+
+### 7.5 仍保留在上下文中的旧参数
+
+以下参数目前仍会写入 `StrategyContext`，仓库里也保留了对应旧策略文件，但当前注册层默认不直接调用这些旧策略模块：
+
+- `Session1_3_*`
+- `Session2_*`
+- `Session4_*`
+- `Session5_*`
+- `Session6_*`
+- `Channel_*`
+
+这些参数和模块目前更适合视为历史遗留或备用实现，而不是当前默认执行链的一部分。
+
+## 8. 当前已知事实
+
+- 当前执行链是“regime 驱动 + 中央注册层仲裁”，不是早期 README 里那种按 session 直接切换完整策略类。
+- 当前 `StrategyRegistry` 注册统计里会显示 6 个策略摘要，这与代码一致。
+- 当前存在旧策略模块文件，但不代表它们都在默认执行链中实际参与信号生成。
+
+## 9. 编译与验证
+
+编译目标：
+
+- `MQL4/Experts/StrategySelector.mq4`
+
+建议验证项：
+
+1. 在 MetaEditor 编译 `StrategySelector.mq4`
+2. 在 MT4/策略测试器确认日志中输出的策略摘要与 README 第 3 节一致
+3. 分别验证：
+   - `REGIME_RANGE` 下是否能触发 `RangeEdgeReversion`
+   - spike 条件满足时是否触发 `SpikeMomentum`
+   - 全局锁盈和 RangeEdge 保护是否按预期移动止损
