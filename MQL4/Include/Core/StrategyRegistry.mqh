@@ -181,6 +181,44 @@ public:
       return false;
    }
 
+   bool HasConsecutiveLowerLows(int window = 5, int threshold = 3)
+   {
+      if(window < 2 || threshold < 1)
+         return false;
+      if(Bars <= window + 1)
+         return false;
+
+      int count = 0;
+      for(int i = 1; i <= window; i++)
+      {
+         if(i + 1 >= Bars)
+            break;
+         if(Low[i] < Low[i + 1])
+            count++;
+      }
+
+      return count >= threshold;
+   }
+
+   bool HasConsecutiveHigherHighs(int window = 5, int threshold = 3)
+   {
+      if(window < 2 || threshold < 1)
+         return false;
+      if(Bars <= window + 1)
+         return false;
+
+      int count = 0;
+      for(int i = 1; i <= window; i++)
+      {
+         if(i + 1 >= Bars)
+            break;
+         if(High[i] > High[i + 1])
+            count++;
+      }
+
+      return count >= threshold;
+   }
+
    bool EvaluateBestSignal(StrategyContext &ctx, RuntimeState &state, TradeSignal &best)
    {
       ResetSignal(best);
@@ -190,9 +228,15 @@ public:
 
       // 按策略自有条件评估：去掉“RANGE 全局禁开仓”硬编码
       if(ctx.regime == REGIME_TREND_UP)
-         BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_LINEAR_TREND, Low[1], "TrendUp-Long", "Regime trend up confirmed", 10, candidate);
+      {
+         if(!HasConsecutiveLowerLows(5, 3))
+            BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_LINEAR_TREND, Low[1], "TrendUp-Long", "Regime trend up confirmed", 10, candidate);
+      }
       else if(ctx.regime == REGIME_TREND_DOWN)
-         BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "TrendDown-Short", "Regime trend down confirmed", 10, candidate);
+      {
+         if(!HasConsecutiveHigherHighs(5, 3))
+            BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "TrendDown-Short", "Regime trend down confirmed", 10, candidate);
+      }
       else if(ctx.regime == REGIME_BREAKOUT_SETUP_UP && state.breakoutRetestActive && Low[1] <= state.breakoutLevel + GetStopBuffer(ctx))
          BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_REVERSAL, MathMin(Low[1], state.breakoutLevel), "BreakoutRetest-Long", "Breakout retest holds above range", 12, candidate);
       else if(ctx.regime == REGIME_BREAKOUT_SETUP_DOWN && state.breakoutRetestActive && High[1] >= state.breakoutLevel - GetStopBuffer(ctx))
