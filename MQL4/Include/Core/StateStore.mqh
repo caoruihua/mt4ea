@@ -38,6 +38,10 @@ public:
       state.asianRangeDate = 0;
       state.lastEntryBarTime = 0;
       state.lastEntryAttemptBarTime = 0;
+      state.spikeLastDirection = 0;
+      state.spikeLastTriggerTime = 0;
+      state.spikeLastAnchorHigh = 0.0;
+      state.spikeLastAnchorLow = 0.0;
    }
 
    bool Save(const RuntimeState &state)
@@ -70,6 +74,10 @@ public:
       FileWrite(handle, "AsianRangeDate=" + TimeToString(state.asianRangeDate));
       FileWrite(handle, "LastEntryBarTime=" + TimeToString(state.lastEntryBarTime));
       FileWrite(handle, "LastEntryAttemptBarTime=" + TimeToString(state.lastEntryAttemptBarTime));
+      FileWrite(handle, "SpikeLastDirection=" + IntegerToString(state.spikeLastDirection));
+      FileWrite(handle, "SpikeLastTriggerTime=" + TimeToString(state.spikeLastTriggerTime));
+      FileWrite(handle, "SpikeLastAnchorHigh=" + DoubleToString(state.spikeLastAnchorHigh, Digits));
+      FileWrite(handle, "SpikeLastAnchorLow=" + DoubleToString(state.spikeLastAnchorLow, Digits));
       FileClose(handle);
       return true;
    }
@@ -117,6 +125,10 @@ public:
          else if(key == "AsianRangeDate") state.asianRangeDate = StringToTime(value);
          else if(key == "LastEntryBarTime") state.lastEntryBarTime = StringToTime(value);
          else if(key == "LastEntryAttemptBarTime") state.lastEntryAttemptBarTime = StringToTime(value);
+         else if(key == "SpikeLastDirection") state.spikeLastDirection = (int)StringToInteger(value);
+         else if(key == "SpikeLastTriggerTime") state.spikeLastTriggerTime = StringToTime(value);
+         else if(key == "SpikeLastAnchorHigh") state.spikeLastAnchorHigh = StringToDouble(value);
+         else if(key == "SpikeLastAnchorLow") state.spikeLastAnchorLow = StringToDouble(value);
       }
 
       FileClose(handle);

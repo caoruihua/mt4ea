@@ -86,6 +86,14 @@ input double   Wick_Break_Tolerance_USD           = 0.3;  // 突破/跌破判定
 input double   Wick_SL_USD                        = 6.0;  // 影线策略独立止损
 input double   Wick_TP_USD                        = 4.0;  // 影线策略独立止盈
 
+input bool     Spike_Enable                       = true; // 是否启用 5 分钟脉冲动量策略
+input int      Spike_Window_Seconds               = 300;  // 滚动窗口秒数
+input double   Spike_Trigger_USD                  = 40.0; // 脉冲最小价格差
+input double   Spike_Max_Pullback_Ratio           = 0.20; // 最大允许回吐比例
+input double   Spike_SL_USD                       = 20.0; // 固定止损价格差
+input double   Spike_TP_USD                       = 35.0; // 固定止盈价格差
+input bool     Spike_Log_Verbose                  = true; // 是否输出完整脉冲日志
+
 const double   FIXED_LOTS             = 0.01; // 固定手数（后续可改动态仓位）
 const double   PROFIT_THRESHOLD_USD   = 50.0; // 日盈利熔断阈值
 const double   LOSS_THRESHOLD_PERCENT = 3.0;  // 日亏损熔断阈值（余额百分比）
@@ -117,6 +125,7 @@ string StrategyIdToString(StrategyId id)
       case STRATEGY_SLOPE_CHANNEL:  return "STRATEGY_SLOPE_CHANNEL";
       case STRATEGY_RANGE_EDGE_REVERSION: return "STRATEGY_RANGE_EDGE_REVERSION";
       case STRATEGY_WICK_REJECTION: return "STRATEGY_WICK_REJECTION";
+      case STRATEGY_SPIKE_MOMENTUM: return "STRATEGY_SPIKE_MOMENTUM";
       default:                      return "STRATEGY_NONE";
    }
 }
@@ -233,6 +242,14 @@ void FillContext()
    g_ctx.wick_break_tolerance_usd = Wick_Break_Tolerance_USD;
    g_ctx.wick_sl_usd = Wick_SL_USD;
    g_ctx.wick_tp_usd = Wick_TP_USD;
+
+   g_ctx.spike_enable = Spike_Enable;
+   g_ctx.spike_window_seconds = Spike_Window_Seconds;
+   g_ctx.spike_trigger_usd = Spike_Trigger_USD;
+   g_ctx.spike_max_pullback_ratio = Spike_Max_Pullback_Ratio;
+   g_ctx.spike_sl_usd = Spike_SL_USD;
+   g_ctx.spike_tp_usd = Spike_TP_USD;
+   g_ctx.spike_log_verbose = Spike_Log_Verbose;
 }
 
 int OnInit()
@@ -240,6 +257,7 @@ int OnInit()
    // 初始化模块并加载状态文件
    g_logger.Init(LogLevel);
    g_executor.Init(g_logger);
+   g_registry.Init(g_logger);
    g_stabilizer.Init(2);
 
    g_stateStore.InitDefaults(g_state);
@@ -323,18 +341,30 @@ void OnTick()
    if(g_state.lastEntryAttemptBarTime == Time[0])
       return;
 
-   if(g_executor.GetCurrentPosition(g_ctx) >= 0)
-      return;
-
    if(g_ctx.ema20 < 0 || g_ctx.ema50 < 0 || g_ctx.rsi < 0 || g_ctx.macd == -1.0 || g_ctx.atr14 < 0 || g_ctx.adx14 < 0)
       return;
 
    MarketRegime raw = g_marketState.Detect(g_ctx, g_state);
    g_ctx.regime = g_stabilizer.Stabilize(raw);
 
+   int existingTicket = g_executor.GetCurrentPosition(g_ctx);
+
    TradeSignal best;
    if(g_registry.EvaluateBestSignal(g_ctx, g_state, best) && best.valid)
    {
+      if(existingTicket >= 0)
+      {
+         g_logger.Info(StringFormat(
+            "信号被持仓阻止 | strategyId=%s | comment=%s | ticket=%d | regime=%d | session=%d",
+            StrategyIdToString(best.strategyId),
+            best.comment,
+            existingTicket,
+            g_ctx.regime,
+            g_ctx.sessionId
+         ));
+         return;
+      }
+
       double entry = (best.orderType == OP_BUY) ? g_ctx.ask : g_ctx.bid;
       g_logger.Info(StringFormat(
          "策略触发下单 | strategyId=%s | comment=%s | orderType=%s | priority=%d | reason=%s | entry=%.5f | sl=%.5f | tp=%.5f | regime=%d | session=%d",

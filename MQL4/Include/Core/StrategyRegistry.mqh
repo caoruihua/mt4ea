@@ -9,11 +9,16 @@
 
 #include "StrategyBase.mqh"
 #include "../Strategies/StrategyRangeEdgeReversion.mqh"
+#include "../Strategies/StrategySpikeMomentum.mqh"
 
 class CStrategyRegistry
 {
+private:
+   CLogger *m_logger;
 public:
-   int GetRegisteredStrategyCount() { return 5; }
+   void Init(CLogger &logger) { m_logger = &logger; }
+
+   int GetRegisteredStrategyCount() { return 6; }
 
    string GetStrategySummaryByIndex(int index)
    {
@@ -24,6 +29,7 @@ public:
          case 2: return "BreakoutRetest | id=STRATEGY_REVERSAL | priority=12";
          case 3: return "RangeEdgeReversion | id=STRATEGY_RANGE_EDGE_REVERSION | priority=14";
          case 4: return "WickRejection | id=STRATEGY_WICK_REJECTION | priority=13";
+         case 5: return "SpikeMomentum | id=STRATEGY_SPIKE_MOMENTUM | priority=15";
       }
 
       return "UnknownStrategy";
@@ -254,6 +260,13 @@ public:
       // 额外叠加“影线拒绝突破”独立候选信号（不覆盖原逻辑，只参与优先级竞争）
       ResetSignal(candidate);
       TryBuildWickRejectionSignal(ctx, candidate);
+      ConsiderSignal(best, candidate);
+
+      ResetSignal(candidate);
+      CStrategySpikeMomentum spikeMomentum;
+      spikeMomentum.Init(*m_logger);
+      if(spikeMomentum.CanTrade(ctx, state))
+         spikeMomentum.GenerateSignal(ctx, state, candidate);
       ConsiderSignal(best, candidate);
 
       return best.valid;

@@ -26,7 +26,8 @@ enum StrategyId
    STRATEGY_REVERSAL,
    STRATEGY_SLOPE_CHANNEL,
    STRATEGY_RANGE_EDGE_REVERSION,
-   STRATEGY_WICK_REJECTION
+   STRATEGY_WICK_REJECTION,
+   STRATEGY_SPIKE_MOMENTUM
 };
 
 struct StrategyContext
@@ -113,6 +114,15 @@ struct StrategyContext
    double wick_break_tolerance_usd;
    double wick_sl_usd;
    double wick_tp_usd;
+
+   // Spike momentum strategy params
+   bool   spike_enable;
+   int    spike_window_seconds;
+   double spike_trigger_usd;
+   double spike_max_pullback_ratio;
+   double spike_sl_usd;
+   double spike_tp_usd;
+   bool   spike_log_verbose;
 };
 
 struct RuntimeState
@@ -143,6 +153,10 @@ struct RuntimeState
    datetime asianRangeDate;
    datetime lastEntryBarTime;        // 最近一次成功开仓所在K线时间
    datetime lastEntryAttemptBarTime; // 最近一次尝试开仓所在K线时间（成功/失败都记录）
+   int      spikeLastDirection;
+   datetime spikeLastTriggerTime;
+   double   spikeLastAnchorHigh;
+   double   spikeLastAnchorLow;
 };
 
 struct TradeSignal
