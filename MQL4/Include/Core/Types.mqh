@@ -21,6 +21,7 @@ enum MarketRegime
    REGIME_TREND_DOWN           // 下降趋势
 };
 
+// 策略唯一标识：用于日志、优先级选择、统计归因
 enum StrategyId
 {
    STRATEGY_NONE = 0,               // 无策略/占位
@@ -35,6 +36,7 @@ enum StrategyId
    STRATEGY_DAILY_EXTREME_ENGULFING // 日内极值吞没
 };
 
+// 斜率通道策略内部状态机阶段
 enum PullbackBaseStage
 {
    PULLBACK_BASE_STAGE_IDLE = 0, // 空闲，尚未进入形态跟踪
@@ -188,10 +190,10 @@ struct RuntimeState
    bool     breakoutRetestActive; // 是否处于突破回踩跟踪中
 
    // ---- 时段辅助状态 ----
-   double   asianHigh;
-   double   asianLow;
-   int      euroBreakoutState;
-   datetime lastResetDate;
+   double   asianHigh;            // 亚洲时段高点缓存
+   double   asianLow;             // 亚洲时段低点缓存
+   int      euroBreakoutState;    // 欧盘突破状态机
+   datetime lastResetDate;        // 最近一次日重置日期
 
    // ---- 分时段交易计数 ----
    int      session1Trades;
@@ -201,19 +203,19 @@ struct RuntimeState
    int      channelTrades;
 
    // ---- 其他策略共享缓存 ----
-   double   fakeBreakoutLow;
-   double   fakeBreakoutHigh;
-   datetime dayExtremeDate;
-   double   dayHigh;
-   double   dayLow;
-   datetime countersResetDate;
-   datetime asianRangeDate;
+   double   fakeBreakoutLow;      // 假突破低点缓存
+   double   fakeBreakoutHigh;     // 假突破高点缓存
+   datetime dayExtremeDate;       // 当日极值对应日期
+   double   dayHigh;              // 当日最高价
+   double   dayLow;               // 当日最低价
+   datetime countersResetDate;    // 计数器最近重置日期
+   datetime asianRangeDate;       // 亚洲区间所属日期
    datetime lastEntryBarTime;        // 最近成功入场K线时间
    datetime lastEntryAttemptBarTime; // 最近尝试入场K线时间（用于同K线限频）
 
-   // The pullback-base-breakout setup is tracked across ticks so the strategy
-   // can wait through the whole "selloff -> failed breakdowns -> 70% recovery"
-   // lifecycle instead of re-evaluating from scratch each tick.
+   // 斜率通道“回撤-筑底-恢复”形态跟踪状态：
+   // 跨 tick 保存，避免每个 tick 从头识别，确保形态识别连贯。
+   // 生命周期示例：回撤下跌 -> 多次跌破失败 -> 价格恢复到阈值。
    int      channelPullbackStage;
    datetime channelSetupTime;
    double   channelPullbackHigh;
@@ -235,7 +237,7 @@ struct RuntimeState
 struct TradeSignal
 {
    bool     valid;       // 信号是否有效
-   StrategyId strategyId;// 来源策略
+   StrategyId strategyId; // 来源策略
    int      orderType;   // OP_BUY / OP_SELL
    double   lots;        // 手数
    double   stopLoss;    // 止损价
