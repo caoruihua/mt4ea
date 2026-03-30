@@ -34,6 +34,9 @@ public:
       state.channelTrades = 0;
       state.fakeBreakoutLow = 0.0;
       state.fakeBreakoutHigh = 0.0;
+      state.dayExtremeDate = 0;
+      state.dayHigh = 0.0;
+      state.dayLow = 0.0;
       state.countersResetDate = 0;
       state.asianRangeDate = 0;
       state.lastEntryBarTime = 0;
@@ -79,6 +82,9 @@ public:
       FileWrite(handle, "ChannelTrades=" + IntegerToString(state.channelTrades));
       FileWrite(handle, "FakeBreakoutLow=" + DoubleToString(state.fakeBreakoutLow, Digits));
       FileWrite(handle, "FakeBreakoutHigh=" + DoubleToString(state.fakeBreakoutHigh, Digits));
+      FileWrite(handle, "DayExtremeDate=" + TimeToString(state.dayExtremeDate));
+      FileWrite(handle, "DayHigh=" + DoubleToString(state.dayHigh, Digits));
+      FileWrite(handle, "DayLow=" + DoubleToString(state.dayLow, Digits));
       FileWrite(handle, "CountersResetDate=" + TimeToString(state.countersResetDate));
       FileWrite(handle, "AsianRangeDate=" + TimeToString(state.asianRangeDate));
       FileWrite(handle, "LastEntryBarTime=" + TimeToString(state.lastEntryBarTime));
@@ -139,6 +145,9 @@ public:
          else if(key == "ChannelTrades") state.channelTrades = (int)StringToInteger(value);
          else if(key == "FakeBreakoutLow") state.fakeBreakoutLow = StringToDouble(value);
          else if(key == "FakeBreakoutHigh") state.fakeBreakoutHigh = StringToDouble(value);
+         else if(key == "DayExtremeDate") state.dayExtremeDate = StringToTime(value);
+         else if(key == "DayHigh") state.dayHigh = StringToDouble(value);
+         else if(key == "DayLow") state.dayLow = StringToDouble(value);
          else if(key == "CountersResetDate") state.countersResetDate = StringToTime(value);
          else if(key == "AsianRangeDate") state.asianRangeDate = StringToTime(value);
          else if(key == "LastEntryBarTime") state.lastEntryBarTime = StringToTime(value);

@@ -69,6 +69,9 @@ public:
       state.asianLow = 0.0;
       state.euroBreakoutState = 0;
       state.lastResetDate = currentDate;
+      state.dayExtremeDate = currentDate;
+      state.dayHigh = 0.0;
+      state.dayLow = 0.0;
       state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
       state.channelSetupTime = 0;
       state.channelPullbackHigh = 0.0;
@@ -93,6 +96,9 @@ public:
       state.channelTrades = 0;
       state.fakeBreakoutLow = 0.0;
       state.fakeBreakoutHigh = 0.0;
+      state.dayExtremeDate = currentDate;
+      state.dayHigh = 0.0;
+      state.dayLow = 0.0;
       state.rangeHigh = 0.0;
       state.rangeLow = 0.0;
       state.breakoutLevel = 0.0;

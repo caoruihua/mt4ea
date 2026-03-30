@@ -3,6 +3,7 @@
 
 #include "StrategyBase.mqh"
 #include "Logger.mqh"
+#include "../Strategies/StrategyDailyExtremeEngulfing.mqh"
 #include "../Strategies/StrategyRangeEdgeReversion.mqh"
 #include "../Strategies/StrategySlopeChannel.mqh"
 #include "../Strategies/StrategySpikeMomentum.mqh"
@@ -15,7 +16,7 @@ private:
 public:
    void Init(CLogger &logger) { m_logger = &logger; }
 
-   int GetRegisteredStrategyCount() { return 7; }
+   int GetRegisteredStrategyCount() { return 8; }
 
    string GetStrategySummaryByIndex(int index)
    {
@@ -28,6 +29,7 @@ public:
          case 4: return "RangeEdgeReversion | id=STRATEGY_RANGE_EDGE_REVERSION | priority=14";
          case 5: return "WickRejection | id=STRATEGY_WICK_REJECTION | priority=13";
          case 6: return "SpikeMomentum | id=STRATEGY_SPIKE_MOMENTUM | priority=15";
+         case 7: return "DailyExtremeEngulfing | id=STRATEGY_DAILY_EXTREME_ENGULFING | priority=configurable_default_15";
       }
 
       return "UnknownStrategy";
@@ -271,6 +273,13 @@ public:
       CStrategyRangeEdgeReversion rangeEdge;
       if(rangeEdge.CanTrade(ctx, state))
          rangeEdge.GenerateSignal(ctx, state, candidate);
+      ConsiderSignal(best, candidate);
+
+      ResetSignal(candidate);
+      CStrategyDailyExtremeEngulfing engulfing;
+      engulfing.Init(*m_logger);
+      if(engulfing.CanTrade(ctx, state))
+         engulfing.GenerateSignal(ctx, state, candidate);
       ConsiderSignal(best, candidate);
 
       ResetSignal(candidate);

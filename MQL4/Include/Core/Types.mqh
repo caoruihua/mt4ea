@@ -21,7 +21,8 @@ enum StrategyId
    STRATEGY_SLOPE_CHANNEL,
    STRATEGY_RANGE_EDGE_REVERSION,
    STRATEGY_WICK_REJECTION,
-   STRATEGY_SPIKE_MOMENTUM
+   STRATEGY_SPIKE_MOMENTUM,
+   STRATEGY_DAILY_EXTREME_ENGULFING
 };
 
 enum PullbackBaseStage
@@ -123,6 +124,14 @@ struct StrategyContext
    double wick_sl_usd;
    double wick_tp_usd;
 
+   // Daily extreme engulfing strategy params
+   bool   engulfing_enable;
+   double engulfing_extreme_proximity_usd;
+   double engulfing_min_body_usd;
+   double engulfing_stop_buffer_usd;
+   double engulfing_max_stop_loss_usd;
+   int    engulfing_priority;
+
    // Spike momentum strategy params
    bool   spike_enable;
    int    spike_window_seconds;
@@ -157,6 +166,9 @@ struct RuntimeState
 
    double   fakeBreakoutLow;
    double   fakeBreakoutHigh;
+   datetime dayExtremeDate;
+   double   dayHigh;
+   double   dayLow;
    datetime countersResetDate;
    datetime asianRangeDate;
    datetime lastEntryBarTime;

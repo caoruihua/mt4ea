@@ -80,6 +80,13 @@ input double   Wick_Break_Tolerance_USD           = 0.3;
 input double   Wick_SL_USD                        = 6.0;
 input double   Wick_TP_USD                        = 4.0;
 
+input bool     Engulfing_Enable                   = true;
+input double   Engulfing_Extreme_Proximity_USD    = 3.0;
+input double   Engulfing_Min_Body_USD             = 2.0;
+input double   Engulfing_Stop_Buffer_USD          = 3.0;
+input double   Engulfing_Max_Stop_Loss_USD        = 8.0;
+input int      Engulfing_Priority                 = 15;
+
 input bool     Spike_Enable                       = true;
 input int      Spike_Window_Seconds               = 300;
 input double   Spike_Trigger_USD                  = 40.0;
@@ -119,6 +126,7 @@ string StrategyIdToString(StrategyId id)
       case STRATEGY_RANGE_EDGE_REVERSION:  return "STRATEGY_RANGE_EDGE_REVERSION";
       case STRATEGY_WICK_REJECTION:        return "STRATEGY_WICK_REJECTION";
       case STRATEGY_SPIKE_MOMENTUM:        return "STRATEGY_SPIKE_MOMENTUM";
+      case STRATEGY_DAILY_EXTREME_ENGULFING:return "STRATEGY_DAILY_EXTREME_ENGULFING";
       default:                             return "STRATEGY_NONE";
    }
 }
@@ -242,6 +250,13 @@ void FillContext()
    g_ctx.wick_break_tolerance_usd = Wick_Break_Tolerance_USD;
    g_ctx.wick_sl_usd = Wick_SL_USD;
    g_ctx.wick_tp_usd = Wick_TP_USD;
+
+   g_ctx.engulfing_enable = Engulfing_Enable;
+   g_ctx.engulfing_extreme_proximity_usd = Engulfing_Extreme_Proximity_USD;
+   g_ctx.engulfing_min_body_usd = Engulfing_Min_Body_USD;
+   g_ctx.engulfing_stop_buffer_usd = Engulfing_Stop_Buffer_USD;
+   g_ctx.engulfing_max_stop_loss_usd = Engulfing_Max_Stop_Loss_USD;
+   g_ctx.engulfing_priority = Engulfing_Priority;
 
    g_ctx.spike_enable = Spike_Enable;
    g_ctx.spike_window_seconds = Spike_Window_Seconds;
