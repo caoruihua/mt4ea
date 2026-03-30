@@ -1,24 +1,21 @@
 #ifndef __CORE_STRATEGY_REGISTRY_MQH__
 #define __CORE_STRATEGY_REGISTRY_MQH__
 
-/*
- * 文件作用：
- * - 注册并持有所有策略实例
- * - 汇总策略信号并按 priority 选择最佳信号
- */
-
 #include "StrategyBase.mqh"
+#include "Logger.mqh"
 #include "../Strategies/StrategyRangeEdgeReversion.mqh"
+#include "../Strategies/StrategySlopeChannel.mqh"
 #include "../Strategies/StrategySpikeMomentum.mqh"
 
 class CStrategyRegistry
 {
 private:
    CLogger *m_logger;
+
 public:
    void Init(CLogger &logger) { m_logger = &logger; }
 
-   int GetRegisteredStrategyCount() { return 6; }
+   int GetRegisteredStrategyCount() { return 7; }
 
    string GetStrategySummaryByIndex(int index)
    {
@@ -27,9 +24,10 @@ public:
          case 0: return "TrendFollowLong | id=STRATEGY_LINEAR_TREND | priority=10";
          case 1: return "TrendFollowShort | id=STRATEGY_BREAKOUT | priority=10";
          case 2: return "BreakoutRetest | id=STRATEGY_REVERSAL | priority=12";
-         case 3: return "RangeEdgeReversion | id=STRATEGY_RANGE_EDGE_REVERSION | priority=14";
-         case 4: return "WickRejection | id=STRATEGY_WICK_REJECTION | priority=13";
-         case 5: return "SpikeMomentum | id=STRATEGY_SPIKE_MOMENTUM | priority=15";
+         case 3: return "SlopeChannel | id=STRATEGY_SLOPE_CHANNEL | priority=13";
+         case 4: return "RangeEdgeReversion | id=STRATEGY_RANGE_EDGE_REVERSION | priority=14";
+         case 5: return "WickRejection | id=STRATEGY_WICK_REJECTION | priority=13";
+         case 6: return "SpikeMomentum | id=STRATEGY_SPIKE_MOMENTUM | priority=15";
       }
 
       return "UnknownStrategy";
@@ -42,7 +40,16 @@ public:
       return ctx.slBufferFixedUsd;
    }
 
-   void BuildRiskRewardSignal(StrategyContext &ctx, RuntimeState &state, int orderType, StrategyId strategyId, double stopAnchor, string comment, string reason, int priority, TradeSignal &signal)
+   void BuildRiskRewardSignal(
+      StrategyContext &ctx,
+      RuntimeState &state,
+      int orderType,
+      StrategyId strategyId,
+      double stopAnchor,
+      string comment,
+      string reason,
+      int priority,
+      TradeSignal &signal)
    {
       double buffer = GetStopBuffer(ctx);
       double entry = (orderType == OP_BUY) ? ctx.ask : ctx.bid;
@@ -232,7 +239,6 @@ public:
       TradeSignal candidate;
       ResetSignal(candidate);
 
-      // 按策略自有条件评估：去掉“RANGE 全局禁开仓”硬编码
       if(ctx.regime == REGIME_TREND_UP)
       {
          if(!HasConsecutiveLowerLows(5, 3))
@@ -244,20 +250,29 @@ public:
             BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "TrendDown-Short", "Regime trend down confirmed", 10, candidate);
       }
       else if(ctx.regime == REGIME_BREAKOUT_SETUP_UP && state.breakoutRetestActive && Low[1] <= state.breakoutLevel + GetStopBuffer(ctx))
+      {
          BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_REVERSAL, MathMin(Low[1], state.breakoutLevel), "BreakoutRetest-Long", "Breakout retest holds above range", 12, candidate);
+      }
       else if(ctx.regime == REGIME_BREAKOUT_SETUP_DOWN && state.breakoutRetestActive && High[1] >= state.breakoutLevel - GetStopBuffer(ctx))
+      {
          BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_REVERSAL, MathMax(High[1], state.breakoutLevel), "BreakoutRetest-Short", "Breakout retest holds below range", 12, candidate);
+      }
 
       ConsiderSignal(best, candidate);
 
-      // 额外叠加“影线拒绝突破”独立候选信号（不覆盖原逻辑，只参与优先级竞争）
+      ResetSignal(candidate);
+      CStrategySlopeChannel slopeChannel;
+      slopeChannel.Init(*m_logger);
+      if(slopeChannel.CanTrade(ctx, state))
+         slopeChannel.GenerateSignal(ctx, state, candidate);
+      ConsiderSignal(best, candidate);
+
       ResetSignal(candidate);
       CStrategyRangeEdgeReversion rangeEdge;
       if(rangeEdge.CanTrade(ctx, state))
          rangeEdge.GenerateSignal(ctx, state, candidate);
       ConsiderSignal(best, candidate);
 
-      // 额外叠加“影线拒绝突破”独立候选信号（不覆盖原逻辑，只参与优先级竞争）
       ResetSignal(candidate);
       TryBuildWickRejectionSignal(ctx, candidate);
       ConsiderSignal(best, candidate);

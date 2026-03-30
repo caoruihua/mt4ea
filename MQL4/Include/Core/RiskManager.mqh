@@ -69,6 +69,15 @@ public:
       state.asianLow = 0.0;
       state.euroBreakoutState = 0;
       state.lastResetDate = currentDate;
+      state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
+      state.channelSetupTime = 0;
+      state.channelPullbackHigh = 0.0;
+      state.channelSupportLevel = 0.0;
+      state.channelFailedBreakdownCount = 0;
+      state.channelBaseBarCount = 0;
+      state.channelBaseCloseAverage = 0.0;
+      state.channelRecoveryLevel = 0.0;
+      state.channelLastBaseBarTime = 0;
    }
 
    void ResetDailyCounters(datetime bjTime, RuntimeState &state)
@@ -90,6 +99,15 @@ public:
       state.breakoutDirection = 0;
       state.breakoutRetestActive = false;
       state.asianRangeDate = 0;
+      state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
+      state.channelSetupTime = 0;
+      state.channelPullbackHigh = 0.0;
+      state.channelSupportLevel = 0.0;
+      state.channelFailedBreakdownCount = 0;
+      state.channelBaseBarCount = 0;
+      state.channelBaseCloseAverage = 0.0;
+      state.channelRecoveryLevel = 0.0;
+      state.channelLastBaseBarTime = 0;
       state.countersResetDate = currentDate;
    }
 };

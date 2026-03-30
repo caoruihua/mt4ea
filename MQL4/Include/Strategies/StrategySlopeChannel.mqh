@@ -1,22 +1,69 @@
 #ifndef __STRATEGY_SLOPE_CHANNEL_MQH__
 #define __STRATEGY_SLOPE_CHANNEL_MQH__
 
-/*
- * 文件作用：
- * - 斜率通道策略（Slope Channel）
- * - 识别“上下轨近似平行且同向倾斜”的通道
- * - 上行通道：回踩下轨附近做多；下行通道：反弹上轨附近做空
- * - 使用独立 SL/TP 参数（channel_sl_usd / channel_tp_usd）
- */
-
 #include "../Core/StrategyBase.mqh"
+#include "../Core/Logger.mqh"
 
 class CStrategySlopeChannel : public IStrategy
 {
 private:
-   double LinearSlopeClose(int lookback, int shiftStart)
+   CLogger *m_logger;
+
+   void Info(const string message)
    {
-      // y = a + b*x，返回 b（每根K线的价格斜率）
+      if(m_logger != NULL)
+         m_logger.Info(message);
+   }
+
+   void Debug(const StrategyContext &ctx, const string message)
+   {
+      if(ctx.logLevel >= 2 && m_logger != NULL)
+         m_logger.Debug(message);
+   }
+
+   string StageToString(const int stage)
+   {
+      switch(stage)
+      {
+         case PULLBACK_BASE_STAGE_PULLBACK: return "pullback";
+         case PULLBACK_BASE_STAGE_BASE:     return "base";
+         case PULLBACK_BASE_STAGE_ARMED:    return "armed";
+         default:                           return "idle";
+      }
+   }
+
+   void ResetPullbackState(RuntimeState &state)
+   {
+      state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
+      state.channelSetupTime = 0;
+      state.channelPullbackHigh = 0.0;
+      state.channelSupportLevel = 0.0;
+      state.channelFailedBreakdownCount = 0;
+      state.channelBaseBarCount = 0;
+      state.channelBaseCloseAverage = 0.0;
+      state.channelRecoveryLevel = 0.0;
+      state.channelLastBaseBarTime = 0;
+   }
+
+   void ResetPullbackState(RuntimeState &state, const string reason, const StrategyContext &ctx)
+   {
+      if(state.channelPullbackStage != PULLBACK_BASE_STAGE_IDLE)
+      {
+         Info(StringFormat(
+            "SlopeChannel | reset | reason=%s | stage=%s | pullbackHigh=%.5f | support=%.5f | baseAvg=%.5f | recovery=%.5f",
+            reason,
+            StageToString(state.channelPullbackStage),
+            state.channelPullbackHigh,
+            state.channelSupportLevel,
+            state.channelBaseCloseAverage,
+            state.channelRecoveryLevel
+         ));
+      }
+      ResetPullbackState(state);
+   }
+
+   double LinearSlopeClose(const int lookback, const int shiftStart)
+   {
       double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumXX = 0.0;
       for(int i = 0; i < lookback; i++)
       {
@@ -27,13 +74,16 @@ private:
          sumXY += x * y;
          sumXX += x * x;
       }
+
       double n = lookback;
       double den = (n * sumXX - sumX * sumX);
-      if(MathAbs(den) < 1e-10) return 0.0;
+      if(MathAbs(den) < 1e-10)
+         return 0.0;
+
       return (n * sumXY - sumX * sumY) / den;
    }
 
-   double LinearSlopeHigh(int lookback, int shiftStart)
+   double LinearSlopeHigh(const int lookback, const int shiftStart)
    {
       double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumXX = 0.0;
       for(int i = 0; i < lookback; i++)
@@ -45,13 +95,16 @@ private:
          sumXY += x * y;
          sumXX += x * x;
       }
+
       double n = lookback;
       double den = (n * sumXX - sumX * sumX);
-      if(MathAbs(den) < 1e-10) return 0.0;
+      if(MathAbs(den) < 1e-10)
+         return 0.0;
+
       return (n * sumXY - sumX * sumY) / den;
    }
 
-   double LinearSlopeLow(int lookback, int shiftStart)
+   double LinearSlopeLow(const int lookback, const int shiftStart)
    {
       double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumXX = 0.0;
       for(int i = 0; i < lookback; i++)
@@ -63,13 +116,16 @@ private:
          sumXY += x * y;
          sumXX += x * x;
       }
+
       double n = lookback;
       double den = (n * sumXX - sumX * sumX);
-      if(MathAbs(den) < 1e-10) return 0.0;
+      if(MathAbs(den) < 1e-10)
+         return 0.0;
+
       return (n * sumXY - sumX * sumY) / den;
    }
 
-   double AverageWidth(int lookback, int shiftStart)
+   double AverageWidth(const int lookback, const int shiftStart)
    {
       double sum = 0.0;
       for(int i = 0; i < lookback; i++)
@@ -77,21 +133,29 @@ private:
       return sum / lookback;
    }
 
-   double ChannelLowerRef(int lookback, int shiftStart)
+   double ChannelLowerRef(const int lookback, const int shiftStart)
    {
       double v = Low[shiftStart];
-      for(int i = 1; i < lookback; i++) if(Low[shiftStart + i] < v) v = Low[shiftStart + i];
+      for(int i = 1; i < lookback; i++)
+      {
+         if(Low[shiftStart + i] < v)
+            v = Low[shiftStart + i];
+      }
       return v;
    }
 
-   double ChannelUpperRef(int lookback, int shiftStart)
+   double ChannelUpperRef(const int lookback, const int shiftStart)
    {
       double v = High[shiftStart];
-      for(int i = 1; i < lookback; i++) if(High[shiftStart + i] > v) v = High[shiftStart + i];
+      for(int i = 1; i < lookback; i++)
+      {
+         if(High[shiftStart + i] > v)
+            v = High[shiftStart + i];
+      }
       return v;
    }
 
-   void BuildSLTP(int orderType, double slUsd, double tpUsd, int digits, double &sl, double &tp)
+   void BuildSLTP(const int orderType, const double slUsd, const double tpUsd, const int digits, double &sl, double &tp)
    {
       if(orderType == OP_BUY)
       {
@@ -105,7 +169,202 @@ private:
       }
    }
 
+   bool IsBullishChannel(const StrategyContext &ctx, const double slopeH, const double slopeL, const double slopeC)
+   {
+      return (slopeH > ctx.channel_min_slope && slopeL > ctx.channel_min_slope && slopeC > 0.0);
+   }
+
+   bool IsBearishChannel(const StrategyContext &ctx, const double slopeH, const double slopeL, const double slopeC)
+   {
+      return (slopeH < -ctx.channel_min_slope && slopeL < -ctx.channel_min_slope && slopeC < 0.0);
+   }
+
+   bool UpdateBullishPullbackState(
+      StrategyContext &ctx,
+      RuntimeState &state,
+      const double upperRef,
+      const double lowerRef,
+      const double currentBid,
+      TradeSignal &signal)
+   {
+      double minDrop = MathMax(ctx.channel_pullback_min_drop_usd, 0.1);
+      double supportTol = MathMax(ctx.channel_support_test_tolerance_usd, 0.1);
+      double breakdownTol = MathMax(ctx.channel_breakdown_close_tolerance_usd, 0.1);
+      int minTests = MathMax(ctx.channel_base_min_tests, 2);
+      int maxBars = MathMax(ctx.channel_base_max_bars, minTests);
+      double triggerRatio = ctx.channel_recovery_trigger_ratio;
+      if(triggerRatio <= 0.0)
+         triggerRatio = 0.7;
+      if(triggerRatio > 1.0)
+         triggerRatio = 1.0;
+
+      double drop = upperRef - currentBid;
+      double supportZoneUpper = lowerRef + supportTol;
+
+      // If a newer swing high forms while an old setup is still being tracked,
+      // the old pullback origin is no longer the right reference for the new
+      // continuation leg. Reset and allow the setup to rebuild from scratch.
+      if(state.channelPullbackStage != PULLBACK_BASE_STAGE_IDLE &&
+         upperRef > state.channelPullbackHigh + supportTol &&
+         currentBid > state.channelSupportLevel + supportTol)
+      {
+         ResetPullbackState(state, "new_pullback_origin_superseded_active_setup", ctx);
+      }
+
+      if(state.channelPullbackStage == PULLBACK_BASE_STAGE_IDLE && drop >= minDrop)
+      {
+         state.channelPullbackStage = PULLBACK_BASE_STAGE_PULLBACK;
+         state.channelSetupTime = Time[0];
+         state.channelPullbackHigh = upperRef;
+         state.channelSupportLevel = lowerRef;
+         Info(StringFormat(
+            "SlopeChannel | stage=pullback | high=%.5f | support=%.5f | drop=%.5f | minDrop=%.5f",
+            state.channelPullbackHigh,
+            state.channelSupportLevel,
+            drop,
+            minDrop
+         ));
+      }
+
+      if(state.channelPullbackStage == PULLBACK_BASE_STAGE_PULLBACK && currentBid <= supportZoneUpper)
+      {
+         state.channelPullbackStage = PULLBACK_BASE_STAGE_BASE;
+         state.channelSupportLevel = lowerRef;
+         state.channelSetupTime = Time[0];
+         Info(StringFormat(
+            "SlopeChannel | stage=base | pullbackHigh=%.5f | support=%.5f | currentBid=%.5f",
+            state.channelPullbackHigh,
+            state.channelSupportLevel,
+            currentBid
+         ));
+      }
+
+      if(state.channelPullbackStage != PULLBACK_BASE_STAGE_BASE &&
+         state.channelPullbackStage != PULLBACK_BASE_STAGE_ARMED)
+      {
+         return false;
+      }
+
+      // Once we start judging the base, accepted closes below support mean the
+      // market did break down. That invalidates the setup immediately.
+      if(Close[1] < state.channelSupportLevel - breakdownTol)
+      {
+         ResetPullbackState(state, "accepted_close_below_support", ctx);
+         return false;
+      }
+
+      int supportTests = 0;
+      double closeSum = 0.0;
+      datetime newestQualifiedBar = 0;
+
+      // The base is intentionally measured from several recent closed candles.
+      // Each qualified candle must probe the support area while still closing
+      // back above the accepted-breakdown boundary. This is how the strategy
+      // distinguishes "support is being defended" from "support merely got hit".
+      for(int i = 1; i <= maxBars; i++)
+      {
+         bool testedSupport = (Low[i] <= state.channelSupportLevel + supportTol);
+         bool closeHeld = (Close[i] >= state.channelSupportLevel - breakdownTol);
+         if(testedSupport && closeHeld)
+         {
+            supportTests++;
+            closeSum += Close[i];
+            if(newestQualifiedBar == 0 || Time[i] > newestQualifiedBar)
+               newestQualifiedBar = Time[i];
+         }
+      }
+
+      if(state.channelFailedBreakdownCount != supportTests ||
+         state.channelBaseBarCount != supportTests)
+      {
+         Info(StringFormat(
+            "SlopeChannel | waiting_base | stage=%s | support=%.5f | tests=%d/%d | latestClose=%.5f | latestLow=%.5f",
+            StageToString(state.channelPullbackStage),
+            state.channelSupportLevel,
+            supportTests,
+            minTests,
+            Close[1],
+            Low[1]
+         ));
+      }
+
+      state.channelFailedBreakdownCount = supportTests;
+      state.channelBaseBarCount = supportTests;
+      state.channelLastBaseBarTime = newestQualifiedBar;
+
+      if(supportTests < minTests)
+      {
+         state.channelBaseCloseAverage = 0.0;
+         state.channelRecoveryLevel = 0.0;
+         state.channelPullbackStage = PULLBACK_BASE_STAGE_BASE;
+         return false;
+      }
+
+      double baseAverage = closeSum / supportTests;
+      double recoveryLevel = baseAverage + (state.channelPullbackHigh - baseAverage) * triggerRatio;
+
+      state.channelBaseCloseAverage = baseAverage;
+      state.channelRecoveryLevel = recoveryLevel;
+
+      if(state.channelPullbackStage != PULLBACK_BASE_STAGE_ARMED)
+      {
+         Info(StringFormat(
+            "SlopeChannel | stage=armed | pullbackHigh=%.5f | support=%.5f | baseAvg=%.5f | recovery=%.5f | tests=%d",
+            state.channelPullbackHigh,
+            state.channelSupportLevel,
+            state.channelBaseCloseAverage,
+            state.channelRecoveryLevel,
+            state.channelFailedBreakdownCount
+         ));
+      }
+
+      state.channelPullbackStage = PULLBACK_BASE_STAGE_ARMED;
+
+      if(ctx.ask < state.channelRecoveryLevel)
+      {
+         Debug(ctx, StringFormat(
+            "SlopeChannel | waiting_recovery | ask=%.5f | recovery=%.5f | baseAvg=%.5f | support=%.5f",
+            ctx.ask,
+            state.channelRecoveryLevel,
+            state.channelBaseCloseAverage,
+            state.channelSupportLevel
+         ));
+         return false;
+      }
+
+      signal.valid = true;
+      signal.strategyId = STRATEGY_SLOPE_CHANNEL;
+      signal.orderType = OP_BUY;
+      signal.lots = ctx.fixedLots;
+      BuildSLTP(OP_BUY, ctx.channel_sl_usd, ctx.channel_tp_usd, ctx.digits, signal.stopLoss, signal.takeProfit);
+      signal.comment = "SlopeChannel-Long";
+      signal.reason = StringFormat(
+         "Pullback base breakout long | high=%.5f | support=%.5f | baseAvg=%.5f | recovery=%.5f | ask=%.5f | tests=%d",
+         state.channelPullbackHigh,
+         state.channelSupportLevel,
+         state.channelBaseCloseAverage,
+         state.channelRecoveryLevel,
+         ctx.ask,
+         state.channelFailedBreakdownCount
+      );
+      signal.priority = 13;
+
+      Info(StringFormat(
+         "SlopeChannel | trigger=long | high=%.5f | support=%.5f | baseAvg=%.5f | recovery=%.5f | ask=%.5f | tests=%d",
+         state.channelPullbackHigh,
+         state.channelSupportLevel,
+         state.channelBaseCloseAverage,
+         state.channelRecoveryLevel,
+         ctx.ask,
+         state.channelFailedBreakdownCount
+      ));
+
+      return true;
+   }
+
 public:
+   void Init(CLogger &logger) { m_logger = &logger; }
+
    virtual string Name() { return "SlopeChannel"; }
 
    virtual bool CanTrade(StrategyContext &ctx, RuntimeState &state)
@@ -114,7 +373,6 @@ public:
          return false;
 
       int h = TimeHour(ctx.beijingTime);
-      // 按你的要求：8:00-15:00 执行斜率策略（10:00-15:00若触及高低点由区间策略优先）
       if(h < 8 || h >= 15)
          return false;
 
@@ -126,47 +384,57 @@ public:
       ResetSignal(signal);
 
       int n = ctx.channel_lookback_bars;
-      if(n < 10) n = 10;
+      if(n < 10)
+         n = 10;
+
+      if(Bars <= n + MathMax(ctx.channel_base_max_bars, 5) + 2)
+         return false;
 
       double adx = iADX(Symbol(), PERIOD_M5, 14, PRICE_CLOSE, MODE_MAIN, 1);
       if(adx < ctx.channel_adx_min)
+      {
+         ResetPullbackState(state, "adx_below_threshold", ctx);
          return false;
+      }
 
       double slopeH = LinearSlopeHigh(n, 1);
       double slopeL = LinearSlopeLow(n, 1);
       double slopeC = LinearSlopeClose(n, 1);
 
       if(MathAbs(slopeH - slopeL) > ctx.channel_parallel_tolerance)
+      {
+         ResetPullbackState(state, "channel_not_parallel", ctx);
          return false;
+      }
 
       double width = AverageWidth(n, 1);
       if(width > ctx.channel_max_width_usd)
+      {
+         ResetPullbackState(state, "channel_width_too_large", ctx);
          return false;
+      }
 
       double lowerRef = ChannelLowerRef(n, 1);
       double upperRef = ChannelUpperRef(n, 1);
-      double c1 = Close[1];
+      bool bullishChannel = IsBullishChannel(ctx, slopeH, slopeL, slopeC);
+      bool bearishChannel = IsBearishChannel(ctx, slopeH, slopeL, slopeC);
 
-      // 上行平行通道：回踩下轨附近 + close斜率向上
-      if(slopeH > ctx.channel_min_slope && slopeL > ctx.channel_min_slope && slopeC > 0)
+      if(bullishChannel)
       {
-         if(c1 <= lowerRef + ctx.channel_entry_tolerance_usd)
-         {
-            signal.valid = true;
-            signal.strategyId = STRATEGY_SLOPE_CHANNEL;
-            signal.orderType = OP_BUY;
-            signal.lots = ctx.fixedLots;
-            BuildSLTP(OP_BUY, ctx.channel_sl_usd, ctx.channel_tp_usd, ctx.digits, signal.stopLoss, signal.takeProfit);
-            signal.comment = "SlopeChannel-Long";
-            signal.reason = "Up slope channel pullback long";
-            signal.priority = 13;
+         if(UpdateBullishPullbackState(ctx, state, upperRef, lowerRef, ctx.bid, signal))
             return true;
-         }
+      }
+      else
+      {
+         ResetPullbackState(state, "bullish_channel_context_lost", ctx);
       }
 
-      // 下行平行通道：反弹上轨附近 + close斜率向下
-      if(slopeH < -ctx.channel_min_slope && slopeL < -ctx.channel_min_slope && slopeC < 0)
+      // The bearish side keeps the legacy behavior for now. This change is
+      // intentionally scoped to the bullish "sharp selloff then recover" case
+      // discussed in the OpenSpec change.
+      if(bearishChannel)
       {
+         double c1 = Close[1];
          if(c1 >= upperRef - ctx.channel_entry_tolerance_usd)
          {
             signal.valid = true;
