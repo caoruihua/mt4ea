@@ -101,6 +101,18 @@ input double   Spike_SL_USD                       = 20.0;
 input double   Spike_TP_USD                       = 35.0;
 input bool     Spike_Log_Verbose                  = true;
 
+// Regime 灵敏度参数：
+// - Promote: 从非趋势升级到趋势所需确认K线数（大一点更稳）
+// - Demote : 趋势失效降级所需确认K线数（小一点更敏锐）
+// - InvalidationAtrMult: 趋势失效幅度阈值（按ATR倍数）
+// - SlopeFlipThreshold : EMA20 斜率翻转阈值（过滤微小波动）
+// - AdxWeakThreshold   : ADX弱趋势闸门（弱势时优先回到RANGE）
+input int      RegimePromoteConfirmBars           = 2;
+input int      RegimeDemoteConfirmBars            = 2;
+input double   RegimeTrendInvalidationAtrMult     = 0.9;
+input double   RegimeSlopeFlipThreshold           = 0.0;
+input double   RegimeAdxWeakThreshold             = 16.0;
+
 const double   FIXED_LOTS             = 0.01;
 const double   PROFIT_THRESHOLD_USD   = 50.0;
 const double   LOSS_THRESHOLD_PERCENT = 3.0;
@@ -169,9 +181,8 @@ void LogStrategyHealthReport()
 
 void FillContext()
 {
-   // The selector builds one shared context per tick so every strategy reads
-   // the same prices, indicators, risk settings, and newly-added pullback
-   // confirmation parameters. This avoids strategy-specific drift.
+   // 每个 tick 统一构建一次上下文，保证所有策略读取同一份行情与风控数据，
+   // 避免“同一时刻不同策略看到的数据不一致”。
    g_ctx.symbol = Symbol();
    g_ctx.timeframe = Period();
    g_ctx.digits = Digits;
@@ -188,6 +199,14 @@ void FillContext()
    g_ctx.macd = g_signalEngine.GetMACD(1);
    g_ctx.atr14 = g_signalEngine.GetATR(1);
    g_ctx.adx14 = g_signalEngine.GetADX(1);
+
+   // 将输入参数注入上下文，供 MarketState / Stabilizer 使用。
+   // 这样无需在各模块重复读 input，便于统一调参与回测对比。
+   g_ctx.regime_promote_confirm_bars = RegimePromoteConfirmBars;
+   g_ctx.regime_demote_confirm_bars = RegimeDemoteConfirmBars;
+   g_ctx.regime_trend_invalidation_atr_mult = RegimeTrendInvalidationAtrMult;
+   g_ctx.regime_slope_flip_threshold = RegimeSlopeFlipThreshold;
+   g_ctx.regime_adx_weak_threshold = RegimeAdxWeakThreshold;
 
    g_ctx.beijingTime = g_clock.GetBeijingTime(TimeZoneOffset);
    g_ctx.sessionId = g_clock.GetCurrentSession(g_ctx.beijingTime);
@@ -284,7 +303,11 @@ int OnInit()
    g_logger.Init(LogLevel);
    g_executor.Init(g_logger);
    g_registry.Init(g_logger);
-   g_stabilizer.Init(2);
+
+   // 不对称防抖初始化：
+   // - Promote(升级趋势)通常更保守
+   // - Demote(趋势失效)可更敏锐
+   g_stabilizer.Init(RegimePromoteConfirmBars, RegimeDemoteConfirmBars);
 
    g_stateStore.InitDefaults(g_state);
    g_stateStore.Load(g_state);
@@ -317,8 +340,10 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
+   // 1) 构建统一上下文
    FillContext();
 
+   // 2) 日级计数与重置逻辑（先处理风控与状态清理）
    g_risk.ResetDailyCounters(g_ctx.beijingTime, g_state);
 
    if(g_risk.NeedDailyReset(g_ctx.beijingTime, g_state))
@@ -356,6 +381,7 @@ void OnTick()
    if(g_state.circuitBreakerActive)
       return;
 
+   // 3) 持仓保护逻辑（全局锁盈 / 保护性移动）
    g_executor.ApplyGlobalProfitLockIfNeeded(g_ctx);
    g_executor.ApplyProtectionIfNeeded(g_ctx);
 
@@ -365,6 +391,8 @@ void OnTick()
    if(g_ctx.ema20 < 0 || g_ctx.ema50 < 0 || g_ctx.rsi < 0 || g_ctx.macd == -1.0 || g_ctx.atr14 < 0 || g_ctx.adx14 < 0)
       return;
 
+   // 4) 先做市场状态识别，再做防抖稳定：
+   // raw 更敏锐，stable 用于最终策略决策，减少噪声抖动。
    MarketRegime raw = g_marketState.Detect(g_ctx, g_state);
    g_ctx.regime = g_stabilizer.Stabilize(raw);
 
@@ -373,6 +401,7 @@ void OnTick()
    TradeSignal best;
    if(g_registry.EvaluateBestSignal(g_ctx, g_state, best) && best.valid)
    {
+      // 5) 有持仓则不重复开仓，避免同向/反向信号互相踩踏。
       if(existingTicket >= 0)
       {
          g_logger.Info(StringFormat(
@@ -401,6 +430,7 @@ void OnTick()
          g_ctx.sessionId
       ));
 
+      // 6) 记录入场并执行下单。
       g_state.lastEntryAttemptBarTime = Time[0];
       int ticket2 = g_executor.OpenOrder(g_ctx, best);
       if(ticket2 > 0)

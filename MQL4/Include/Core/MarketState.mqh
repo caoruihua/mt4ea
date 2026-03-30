@@ -31,7 +31,6 @@ public:
       state.rangeLow = lowest;
 
       double rangeWidth = highest - lowest;
-      double atr = ctx.atr14;
       double close1 = Close[1];
       double close2 = Close[2];
       double ema20Prev = iMA(Symbol(), PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 3);
@@ -39,9 +38,31 @@ public:
       double ema20Slope = ctx.ema20 - ema20Prev;
       double ema50Slope = ctx.ema50 - ema50Prev;
 
+      double atr = MathMax(ctx.atr14, 0.0);
+      double invalidationMoveThreshold = atr * MathMax(ctx.regime_trend_invalidation_atr_mult, 0.0);
+      double trendAdxThreshold = MathMax(18.0, ctx.regime_adx_weak_threshold);
+
+      bool weakAdx = (ctx.adx14 > 0 && ctx.adx14 < ctx.regime_adx_weak_threshold);
+
+      bool upTrendStrongInvalidated =
+         (atr > 0) &&
+         (close1 < ctx.ema20) &&
+         (ema20Slope < -ctx.regime_slope_flip_threshold) &&
+         ((highest - close1) >= invalidationMoveThreshold);
+
+      bool downTrendStrongInvalidated =
+         (atr > 0) &&
+         (close1 > ctx.ema20) &&
+         (ema20Slope > ctx.regime_slope_flip_threshold) &&
+         ((close1 - lowest) >= invalidationMoveThreshold);
+
       bool risingStructure = (High[1] > High[2] && High[2] > High[3] && Low[1] > Low[2] && Low[2] > Low[3]);
       bool fallingStructure = (High[1] < High[2] && High[2] < High[3] && Low[1] < Low[2] && Low[2] < Low[3]);
       bool rangeCandidate = (ctx.adx14 > 0 && ctx.adx14 < 18.0 && atr > 0 && rangeWidth <= atr * 3.5);
+
+      // 趋势失效快线：先快速撤销旧趋势，优先回到 RANGE，避免“过山车后仍维持旧方向”。
+      if(upTrendStrongInvalidated || downTrendStrongInvalidated)
+         return REGIME_RANGE;
 
       if(state.breakoutRetestActive)
       {
@@ -108,10 +129,10 @@ public:
          return REGIME_RANGE;
       }
 
-      if(risingStructure && ctx.ema20 > ctx.ema50 && ema20Slope > 0 && ema50Slope >= 0 && ctx.adx14 >= 18.0)
+      if(!weakAdx && risingStructure && ctx.ema20 > ctx.ema50 && ema20Slope > 0 && ema50Slope >= 0 && ctx.adx14 >= trendAdxThreshold)
          return REGIME_TREND_UP;
 
-      if(fallingStructure && ctx.ema20 < ctx.ema50 && ema20Slope < 0 && ema50Slope <= 0 && ctx.adx14 >= 18.0)
+      if(!weakAdx && fallingStructure && ctx.ema20 < ctx.ema50 && ema20Slope < 0 && ema50Slope <= 0 && ctx.adx14 >= trendAdxThreshold)
          return REGIME_TREND_DOWN;
 
       return REGIME_RANGE;
