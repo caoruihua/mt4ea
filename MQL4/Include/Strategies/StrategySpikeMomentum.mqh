@@ -238,6 +238,6 @@ public:
    }
 };
 
-const int CStrategySpikeMomentum::VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS = 10;
+const int CStrategySpikeMomentum::VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS = 20;
 
 #endif
