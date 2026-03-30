@@ -104,6 +104,12 @@ struct StrategyContext
    int    channel_base_min_tests;
    int    channel_base_max_bars;
    double channel_recovery_trigger_ratio;
+   bool   channel_enable_stall_filter;
+   int    channel_stall_lookback_bars;
+   double channel_stall_max_high_progress_usd;
+   double channel_stall_close_band_max_usd;
+   double channel_stall_compression_ratio;
+   int    channel_stall_min_conditions;
 
    // Range-edge reversion strategy params
    int    range_edge_observation_bars;

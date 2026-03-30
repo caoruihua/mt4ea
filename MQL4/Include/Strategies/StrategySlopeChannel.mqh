@@ -179,6 +179,89 @@ private:
       return (slopeH < -ctx.channel_min_slope && slopeL < -ctx.channel_min_slope && slopeC < 0.0);
    }
 
+   bool EvaluateBullishStallFilter(
+      StrategyContext &ctx,
+      RuntimeState &state,
+      double &highProgress,
+      double &closeBand,
+      double &recentRange,
+      int &matchedConditions)
+   {
+      highProgress = 0.0;
+      closeBand = 0.0;
+      recentRange = 0.0;
+      matchedConditions = 0;
+
+      if(!ctx.channel_enable_stall_filter)
+         return false;
+
+      int lookback = MathMax(ctx.channel_stall_lookback_bars, 6);
+      if(Bars <= lookback + 2)
+         return false;
+
+      int recentHalf = MathMax(lookback / 2, 2);
+      int olderStart = recentHalf + 1;
+
+      double recentHigh = High[1];
+      double olderHigh = High[olderStart];
+      double highestClose = Close[1];
+      double lowestClose = Close[1];
+      double highestHigh = High[1];
+      double lowestLow = Low[1];
+
+      for(int i = 1; i <= lookback; i++)
+      {
+         if(i <= recentHalf && High[i] > recentHigh)
+            recentHigh = High[i];
+
+         if(i >= olderStart && High[i] > olderHigh)
+            olderHigh = High[i];
+
+         if(Close[i] > highestClose)
+            highestClose = Close[i];
+         if(Close[i] < lowestClose)
+            lowestClose = Close[i];
+         if(High[i] > highestHigh)
+            highestHigh = High[i];
+         if(Low[i] < lowestLow)
+            lowestLow = Low[i];
+      }
+
+      highProgress = recentHigh - olderHigh;
+      closeBand = highestClose - lowestClose;
+      recentRange = highestHigh - lowestLow;
+
+      double pullbackSpan = MathMax(state.channelPullbackHigh - state.channelSupportLevel, ctx.channel_pullback_min_drop_usd);
+      double compressionThreshold = MathMax(pullbackSpan * ctx.channel_stall_compression_ratio,
+                                            ctx.channel_stall_close_band_max_usd * 1.5);
+
+      bool weakProgress = (highProgress <= ctx.channel_stall_max_high_progress_usd);
+      bool clusteredCloses = (closeBand <= ctx.channel_stall_close_band_max_usd);
+      bool compressedRange = (recentRange <= compressionThreshold);
+
+      if(weakProgress)
+         matchedConditions++;
+      if(clusteredCloses)
+         matchedConditions++;
+      if(compressedRange)
+         matchedConditions++;
+
+      Info(StringFormat(
+         "SlopeChannel | stall_check | lookback=%d | highProgress=%.5f/%.5f | closeBand=%.5f/%.5f | recentRange=%.5f/%.5f | hits=%d/%d",
+         lookback,
+         highProgress,
+         ctx.channel_stall_max_high_progress_usd,
+         closeBand,
+         ctx.channel_stall_close_band_max_usd,
+         recentRange,
+         compressionThreshold,
+         matchedConditions,
+         MathMax(ctx.channel_stall_min_conditions, 1)
+      ));
+
+      return (matchedConditions >= MathMax(ctx.channel_stall_min_conditions, 1));
+   }
+
    bool UpdateBullishPullbackState(
       StrategyContext &ctx,
       RuntimeState &state,
@@ -329,6 +412,27 @@ private:
             state.channelBaseCloseAverage,
             state.channelSupportLevel
          ));
+         return false;
+      }
+
+      double stallHighProgress = 0.0;
+      double stallCloseBand = 0.0;
+      double stallRecentRange = 0.0;
+      int stallHits = 0;
+      if(EvaluateBullishStallFilter(ctx, state, stallHighProgress, stallCloseBand, stallRecentRange, stallHits))
+      {
+         Info(StringFormat(
+            "SlopeChannel | reject=stall_filter | high=%.5f | support=%.5f | recovery=%.5f | ask=%.5f | highProgress=%.5f | closeBand=%.5f | recentRange=%.5f | hits=%d",
+            state.channelPullbackHigh,
+            state.channelSupportLevel,
+            state.channelRecoveryLevel,
+            ctx.ask,
+            stallHighProgress,
+            stallCloseBand,
+            stallRecentRange,
+            stallHits
+         ));
+         ResetPullbackState(state, "stall_filter_veto", ctx);
          return false;
       }
 

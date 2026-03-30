@@ -8,7 +8,7 @@ class CStrategySpikeMomentum : public IStrategy
 {
 private:
    CLogger *m_logger;
-   static const int VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS = 10;
+   static const int VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS;
 
    void Info(const string message)
    {
@@ -237,5 +237,7 @@ public:
       return true;
    }
 };
+
+const int CStrategySpikeMomentum::VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS = 10;
 
 #endif

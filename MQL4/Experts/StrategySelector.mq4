@@ -62,6 +62,12 @@ input double   Channel_BreakdownCloseTolerance_USD= 0.5;
 input int      Channel_Base_MinTests              = 2;
 input int      Channel_Base_MaxBars               = 5;
 input double   Channel_Recovery_Trigger_Ratio     = 0.70;
+input bool     Channel_Enable_Stall_Filter        = true;
+input int      Channel_Stall_Lookback_Bars        = 10;
+input double   Channel_Stall_Max_High_Progress_USD= 1.5;
+input double   Channel_Stall_Close_Band_Max_USD   = 4.0;
+input double   Channel_Stall_Compression_Ratio    = 0.60;
+input int      Channel_Stall_Min_Conditions       = 2;
 
 input int      RangeEdge_Observation_Bars         = 30;
 input int      RangeEdge_Trading_Bars             = 20;
@@ -233,6 +239,12 @@ void FillContext()
    g_ctx.channel_base_min_tests = Channel_Base_MinTests;
    g_ctx.channel_base_max_bars = Channel_Base_MaxBars;
    g_ctx.channel_recovery_trigger_ratio = Channel_Recovery_Trigger_Ratio;
+   g_ctx.channel_enable_stall_filter = Channel_Enable_Stall_Filter;
+   g_ctx.channel_stall_lookback_bars = Channel_Stall_Lookback_Bars;
+   g_ctx.channel_stall_max_high_progress_usd = Channel_Stall_Max_High_Progress_USD;
+   g_ctx.channel_stall_close_band_max_usd = Channel_Stall_Close_Band_Max_USD;
+   g_ctx.channel_stall_compression_ratio = Channel_Stall_Compression_Ratio;
+   g_ctx.channel_stall_min_conditions = Channel_Stall_Min_Conditions;
 
    g_ctx.range_edge_observation_bars = RangeEdge_Observation_Bars;
    g_ctx.range_edge_trading_bars = RangeEdge_Trading_Bars;
