@@ -8,6 +8,7 @@ class CStrategySpikeMomentum : public IStrategy
 {
 private:
    CLogger *m_logger;
+   static const int VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS = 10;
 
    void Info(const string message)
    {
@@ -19,6 +20,16 @@ private:
    {
       if(ctx.logLevel >= 2 && m_logger != NULL)
          m_logger.Debug(message);
+   }
+
+   bool ShouldLogVerboseEvaluate(const datetime nowServer)
+   {
+      static datetime s_lastVerboseEvaluateLogTime = 0;
+      if(s_lastVerboseEvaluateLogTime > 0 && nowServer - s_lastVerboseEvaluateLogTime < VERBOSE_EVALUATE_LOG_THROTTLE_SECONDS)
+         return false;
+
+      s_lastVerboseEvaluateLogTime = nowServer;
+      return true;
    }
 
    bool IsSpikeEventStillActive(const StrategyContext &ctx, const RuntimeState &state, const int direction, const double windowHigh, const double windowLow)
@@ -112,7 +123,7 @@ public:
       bool highAfterLow = (highTime >= lowTime);
       bool lowAfterHigh = (lowTime >= highTime);
 
-      if(ctx.spike_log_verbose)
+      if(ctx.spike_log_verbose && ShouldLogVerboseEvaluate(nowServer))
       {
          Info(StringFormat(
             "SpikeMomentum | evaluate | server=%s | beijing=%s | session=%d | regime=%d | bars=%d | start=%s | end=%s | high=%.2f@%s | low=%.2f@%s | ask=%.2f | bid=%.2f | impulse=%.2f | trigger=%.2f | buyPullback=%.2f | buyRatio=%.4f | sellPullback=%.2f | sellRatio=%.4f",
