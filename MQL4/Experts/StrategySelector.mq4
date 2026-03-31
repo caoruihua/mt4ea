@@ -103,9 +103,9 @@ input double   Engulfing_Max_Stop_Loss_USD        = 8.0;
 input int      Engulfing_Priority                 = 15;
 
 input bool     Spike_Enable                       = true;
-input int      Spike_Window_Seconds               = 300;
-input double   Spike_Trigger_USD                  = 40.0;
-input double   Spike_Max_Pullback_Ratio           = 0.20;
+input int      Spike_Window_Seconds               = 120;
+input double   Spike_Trigger_USD                  = 20.0;
+input double   Spike_Max_Pullback_Ratio           = 0.40;
 input double   Spike_SL_USD                       = 20.0;
 input double   Spike_TP_USD                       = 35.0;
 input bool     Spike_Log_Verbose                  = true;
@@ -116,8 +116,8 @@ input bool     Spike_Log_Verbose                  = true;
 // - InvalidationAtrMult: 趋势失效幅度阈值（按ATR倍数）
 // - SlopeFlipThreshold : EMA20 斜率翻转阈值（过滤微小波动）
 // - AdxWeakThreshold   : ADX弱趋势闸门（弱势时优先回到RANGE）
-input int      RegimePromoteConfirmBars           = 2;
-input int      RegimeDemoteConfirmBars            = 2;
+input int      RegimePromoteConfirmBars           = 1;
+input int      RegimeDemoteConfirmBars            = 1;
 input double   RegimeTrendInvalidationAtrMult     = 0.9;
 input double   RegimeSlopeFlipThreshold           = 0.0;
 input double   RegimeAdxWeakThreshold             = 16.0;
@@ -202,8 +202,8 @@ void FillContext()
    g_ctx.bid = Bid;
    g_ctx.ask = Ask;
 
+   g_ctx.ema12 = g_signalEngine.GetEMA(12, 1);
    g_ctx.ema20 = g_signalEngine.GetEMA(20, 1);
-   g_ctx.ema50 = g_signalEngine.GetEMA(50, 1);
    g_ctx.rsi = g_signalEngine.GetRSI(1);
    g_ctx.macd = g_signalEngine.GetMACD(1);
    g_ctx.atr14 = g_signalEngine.GetATR(1);
@@ -397,7 +397,7 @@ void OnTick()
    if(g_state.lastEntryAttemptBarTime == Time[0])
       return;
 
-   if(g_ctx.ema20 < 0 || g_ctx.ema50 < 0 || g_ctx.rsi < 0 || g_ctx.macd == -1.0 || g_ctx.atr14 < 0 || g_ctx.adx14 < 0)
+   if(g_ctx.ema12 < 0 || g_ctx.ema20 < 0 || g_ctx.rsi < 0 || g_ctx.macd == -1.0 || g_ctx.atr14 < 0 || g_ctx.adx14 < 0)
       return;
 
    // 4) 先做市场状态识别，再做防抖稳定：
@@ -418,15 +418,15 @@ void OnTick()
    if(TimeCurrent() - s_diagLogTime >= 60)
    {
       g_logger.Info(StringFormat(
-         "RegimeDiag | rawRegime=%d | stableRegime=%d | breakoutSubstate=%d | frozenHigh=%.5f | frozenLow=%.5f | holdBars=%d | ema20=%.5f | ema50=%.5f | adx14=%.2f",
+         "RegimeDiag | rawRegime=%d | stableRegime=%d | breakoutSubstate=%d | frozenHigh=%.5f | frozenLow=%.5f | holdBars=%d | ema12=%.5f | ema20=%.5f | adx14=%.2f",
          (int)raw,
          (int)g_ctx.regime,
          g_state.breakoutSubstate,
          g_state.breakoutFrozenHigh,
          g_state.breakoutFrozenLow,
          g_state.breakoutHoldBars,
+         g_ctx.ema12,
          g_ctx.ema20,
-         g_ctx.ema50,
          g_ctx.adx14
       ));
       s_diagLogTime = TimeCurrent();

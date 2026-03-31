@@ -476,8 +476,9 @@ public:
       if(state.channelTrades >= ctx.channel_max_trades_per_day)
          return false;
 
+      // 放宽时段限制：亚盘和欧盘都允许，更敏感
       int h = TimeHour(ctx.beijingTime);
-      if(h < 8 || h >= 15)
+      if(h < 6 || h >= 21)
          return false;
 
       return true;

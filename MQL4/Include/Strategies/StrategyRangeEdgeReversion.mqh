@@ -17,8 +17,8 @@ input bool    InpEnableTrendFilter      = true;    // 启用趋势过滤
 input int     InpTrendFilterWindow     = 5;        // 趋势过滤窗口（根K线）
 input int     InpTrendFilterThreshold  = 3;        // 趋势过滤阈值（连续N根触发）
 input bool    InpEnableEmaFilter       = true;     // 启用EMA方向过滤
-input int     InpEmaFastPeriod         = 20;       // EMA快线周期
-input int     InpEmaSlowPeriod         = 50;       // EMA慢线周期
+input int     InpEmaFastPeriod         = 10;       // EMA快线周期
+input int     InpEmaSlowPeriod         = 20;       // EMA慢线周期
 input bool    InpEnableAdxFilter       = false;   // 启用ADX强度过滤（默认关闭）
 input int     InpAdxPeriod             = 14;       // ADX周期
 input double  InpAdxThreshold          = 25.0;     // ADX阈值（超过此值且逆势时禁止）
@@ -106,9 +106,38 @@ public:
          return false;
 
       double mid = (tradeHigh + tradeLow) * 0.5;
+      double edgeBandEscapeMult = 2.0;
+
+      bool nearUpperEdge = (ctx.bid >= tradeHigh - tolerance && ctx.bid <= tradeHigh + tolerance);
+      bool nearLowerEdge = (ctx.ask <= tradeLow + tolerance && ctx.ask >= tradeLow - tolerance);
+
+      // 价格已明显脱离区间边缘带，直接拒绝区间反转候选，避免“已突破却还按震荡做反向”。
+      if(ctx.bid > tradeHigh + tolerance * edgeBandEscapeMult)
+      {
+         Print(StringFormat(
+            "[RangeEdgeReversion] 信号拒绝 | phase=edge-band | decision=REJECT | reason=outside_range_edge_band_up | bid=%.5f | tradeHigh=%.5f | tolerance=%.2f | escapeMult=%.1f",
+            ctx.bid,
+            tradeHigh,
+            tolerance,
+            edgeBandEscapeMult
+         ));
+         return false;
+      }
+
+      if(ctx.ask < tradeLow - tolerance * edgeBandEscapeMult)
+      {
+         Print(StringFormat(
+            "[RangeEdgeReversion] 信号拒绝 | phase=edge-band | decision=REJECT | reason=outside_range_edge_band_down | ask=%.5f | tradeLow=%.5f | tolerance=%.2f | escapeMult=%.1f",
+            ctx.ask,
+            tradeLow,
+            tolerance,
+            edgeBandEscapeMult
+         ));
+         return false;
+      }
 
       // ---- 区间上沿做空 ----
-      if(ctx.bid >= tradeHigh - tolerance)
+      if(nearUpperEdge)
       {
          Print(StringFormat(
             "[RangeEdgeReversion] 候选信号 | side=SELL | phase=edge-check | regime=%d | bid=%.5f | ask=%.5f | tradeHigh=%.5f | tradeLow=%.5f | mid=%.5f | tolerance=%.2f | slBuffer=%.2f | obsBars=%d | tradeBars=%d",
@@ -152,7 +181,7 @@ public:
       }
 
       // ---- 区间下沿做多 ----
-      if(ctx.ask <= tradeLow + tolerance)
+      if(nearLowerEdge)
       {
          Print(StringFormat(
             "[RangeEdgeReversion] 候选信号 | side=BUY | phase=edge-check | regime=%d | bid=%.5f | ask=%.5f | tradeHigh=%.5f | tradeLow=%.5f | mid=%.5f | tolerance=%.2f | slBuffer=%.2f | obsBars=%d | tradeBars=%d",

@@ -8,6 +8,9 @@
  *   趋势/震荡/突破/反转
  * - v2: 新增解耦后的方向突破子状态机（breakoutSubstate）
  *   区间边界在 candidate 开始时冻结，2 根 closed bar 站稳即确认。
+ * - v2.1: [fix] lookback 30→12（M5 回看窗口收窄到 1 小时）
+ *         [fix] EMA 斜率基准 bar[3]→bar[2]（相邻两根，更敏感）
+ *         [fix] EMA 斜率归一化（除以 ATR，消除品种差异）
  */
 
 #include "Types.mqh"
@@ -18,7 +21,10 @@ public:
    MarketRegime Detect(StrategyContext &ctx, RuntimeState &state)
    {
       // ── 1. 样本保护 ─────────────────────────────────────────
-      int lookback = 30;
+      // [fix v2.1] lookback: 30 → 12
+      // M5 × 12根 = 60分钟，短线回看 1 小时更合理
+      // 原来 30根 = 150分钟，高低点太陈旧，容易把正常短线突破淹没在大区间里
+      int lookback = 12;
       if(Bars <= lookback + 5)
          return REGIME_UNKNOWN;
 
@@ -38,34 +44,49 @@ public:
       state.rangeLow  = lowest;
 
       double rangeWidth = highest - lowest;
-      double atr = MathMax(ctx.atr14, 0.0);
+      double atr = MathMax(ctx.atr14, 0.0001);  // [fix] 防止除零，最小值改为 0.0001
 
-      // ── 3. EMA 斜率（与旧逻辑一致） ──────────────────────────
-      double ema20Prev  = iMA(Symbol(), PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 3);
-      double ema50Prev  = iMA(Symbol(), PERIOD_M5, 50, 0, MODE_EMA, PRICE_CLOSE, 3);
-      double ema20Slope = ctx.ema20 - ema20Prev;
-      double ema50Slope = ctx.ema50 - ema50Prev;
+      // ── 3. EMA 斜率 ──────────────────────────────────────────
+      // [fix v2.1] 基准从 bar[3] 改为 bar[2]：
+      //   原来：ema20Slope = bar[1]值 - bar[3]值，跨越 10 分钟，斜率太钝
+      //   现在：ema20Slope = bar[1]值 - bar[2]值，只差 5 分钟，更敏感
+      double ema12Prev  = iMA(Symbol(), PERIOD_M5, 12, 0, MODE_EMA, PRICE_CLOSE, 2);
+      double ema20Prev  = iMA(Symbol(), PERIOD_M5, 20, 0, MODE_EMA, PRICE_CLOSE, 2);
+
+      double ema12SlopeRaw = ctx.ema12 - ema12Prev;
+      double ema20SlopeRaw = ctx.ema20 - ema20Prev;
+
+      // [fix v2.1] 斜率归一化：除以 ATR，消除品种价格量纲差异
+      //   例：黄金 ATR=2.0，斜率 0.3 → 归一化 0.15（15% ATR/bar）
+      //       日元 ATR=0.5，斜率 0.3 → 归一化 0.60（60% ATR/bar，明显更陡）
+      //   归一化后阈值在不同品种上含义一致
+      double ema12Slope = ema12SlopeRaw / atr;
+      double ema20Slope = ema20SlopeRaw / atr;
+
+      // [fix v2.1] 斜率阈值改为归一化比例
+      //   原来 regime_slope_flip_threshold 是绝对价格值，品种间不可移植
+      //   现在含义：EMA 每根 bar 移动量 >= X% 的 ATR 才算有效斜率
+      //   建议 ctx.regime_slope_flip_threshold 设置为 0.03～0.08
+      double slopeThreshold = MathMax(ctx.regime_slope_flip_threshold, 0.0);
 
       double invalidationMoveThreshold = atr * MathMax(ctx.regime_trend_invalidation_atr_mult, 0.0);
       double trendAdxThreshold = MathMax(18.0, ctx.regime_adx_weak_threshold);
       bool   weakAdx = (ctx.adx14 > 0 && ctx.adx14 < ctx.regime_adx_weak_threshold);
 
       // ── 4. 旧趋势失效快线（优先级最高） ─────────────────────
+      // 注意：slopeThreshold 现在是归一化值，ema20Slope 也是归一化值，量纲一致
       bool upTrendStrongInvalidated =
-         (atr > 0) &&
-         (close1 < ctx.ema20) &&
-         (ema20Slope < -ctx.regime_slope_flip_threshold) &&
+         (close1 < ctx.ema12) &&
+         (ema12Slope < -slopeThreshold) &&
          ((highest - close1) >= invalidationMoveThreshold);
 
       bool downTrendStrongInvalidated =
-         (atr > 0) &&
-         (close1 > ctx.ema20) &&
-         (ema20Slope > ctx.regime_slope_flip_threshold) &&
+         (close1 > ctx.ema12) &&
+         (ema12Slope > slopeThreshold) &&
          ((close1 - lowest) >= invalidationMoveThreshold);
 
       if(upTrendStrongInvalidated || downTrendStrongInvalidated)
       {
-         // 旧趋势失效时同步重置突破子状态
          state.breakoutSubstate         = BREAKOUT_NONE;
          state.breakoutFrozenHigh       = 0.0;
          state.breakoutFrozenLow        = 0.0;
@@ -79,7 +100,6 @@ public:
 
       int    sub = state.breakoutSubstate;
 
-      // 5a. 当前为候选阶段 → 判断是否确认或失败
       if(sub == BREAKOUT_CANDIDATE_UP)
       {
          if(close1 > state.breakoutFrozenHigh + breakoutBuffer)
@@ -88,20 +108,17 @@ public:
             if(state.breakoutHoldBars >= 2)
             {
                state.breakoutSubstate = BREAKOUT_CONFIRMED_UP;
-               return REGIME_TREND_UP; // 确认上破 → 立即追多
+               return REGIME_TREND_UP;
             }
-            // 还未满 2 根，保持候选
             return REGIME_RANGE;
          }
          else
          {
-            // 收盘回到区间内 → 突破失败
             state.breakoutSubstate         = BREAKOUT_FAILED;
             state.breakoutFrozenHigh       = 0.0;
             state.breakoutFrozenLow        = 0.0;
             state.breakoutCandidateBarTime = 0;
             state.breakoutHoldBars         = 0;
-            // 失败后回退到 RANGE；下面继续执行结构判断
          }
       }
       else if(sub == BREAKOUT_CANDIDATE_DOWN)
@@ -112,7 +129,7 @@ public:
             if(state.breakoutHoldBars >= 2)
             {
                state.breakoutSubstate = BREAKOUT_CONFIRMED_DOWN;
-               return REGIME_TREND_DOWN; // 确认下破 → 立即追空
+               return REGIME_TREND_DOWN;
             }
             return REGIME_RANGE;
          }
@@ -125,25 +142,80 @@ public:
             state.breakoutHoldBars         = 0;
          }
       }
-      // 5b. 已确认阶段 → 维持直到旧趋势失效（已在上方处理）
       else if(sub == BREAKOUT_CONFIRMED_UP)
          return REGIME_TREND_UP;
       else if(sub == BREAKOUT_CONFIRMED_DOWN)
          return REGIME_TREND_DOWN;
 
-      // 5c. NONE / FAILED → 检测新的突破候选
-      // 使用冻结边界（计算时已排除 bar[1]）
-      if(close1 > highest + breakoutBuffer && close2 <= highest + breakoutBuffer)
+      // 5c. NONE / FAILED → 检测新的突破候选/确认
+      double upperBreakLevel = highest + breakoutBuffer;
+      double lowerBreakLevel = lowest  - breakoutBuffer;
+      static datetime s_breakoutDiagLogTime = 0;
+      bool allowDiagLog = (TimeCurrent() - s_breakoutDiagLogTime >= 15);
+
+      if(close1 > upperBreakLevel && close2 > upperBreakLevel)
       {
+         if(allowDiagLog)
+         {
+            Print(StringFormat(
+               "[MarketState] breakout confirm up | close1=%.5f | close2=%.5f | upperLevel=%.5f | highest=%.5f | buffer=%.5f",
+               close1, close2, upperBreakLevel, highest, breakoutBuffer
+            ));
+            s_breakoutDiagLogTime = TimeCurrent();
+         }
+         state.breakoutSubstate         = BREAKOUT_CONFIRMED_UP;
+         state.breakoutFrozenHigh       = highest;
+         state.breakoutFrozenLow        = lowest;
+         state.breakoutCandidateBarTime = Time[1];
+         state.breakoutHoldBars         = 2;
+         return REGIME_TREND_UP;
+      }
+
+      if(close1 < lowerBreakLevel && close2 < lowerBreakLevel)
+      {
+         if(allowDiagLog)
+         {
+            Print(StringFormat(
+               "[MarketState] breakout confirm down | close1=%.5f | close2=%.5f | lowerLevel=%.5f | lowest=%.5f | buffer=%.5f",
+               close1, close2, lowerBreakLevel, lowest, breakoutBuffer
+            ));
+            s_breakoutDiagLogTime = TimeCurrent();
+         }
+         state.breakoutSubstate         = BREAKOUT_CONFIRMED_DOWN;
+         state.breakoutFrozenHigh       = highest;
+         state.breakoutFrozenLow        = lowest;
+         state.breakoutCandidateBarTime = Time[1];
+         state.breakoutHoldBars         = 2;
+         return REGIME_TREND_DOWN;
+      }
+
+      if(close1 > upperBreakLevel)
+      {
+         if(allowDiagLog)
+         {
+            Print(StringFormat(
+               "[MarketState] breakout candidate up | close1=%.5f | close2=%.5f | upperLevel=%.5f | highest=%.5f | buffer=%.5f",
+               close1, close2, upperBreakLevel, highest, breakoutBuffer
+            ));
+            s_breakoutDiagLogTime = TimeCurrent();
+         }
          state.breakoutSubstate         = BREAKOUT_CANDIDATE_UP;
          state.breakoutFrozenHigh       = highest;
          state.breakoutFrozenLow        = lowest;
          state.breakoutCandidateBarTime = Time[1];
-         state.breakoutHoldBars         = 1; // 首根已站稳
+         state.breakoutHoldBars         = 1;
          return REGIME_RANGE;
       }
-      if(close1 < lowest - breakoutBuffer && close2 >= lowest - breakoutBuffer)
+      if(close1 < lowerBreakLevel)
       {
+         if(allowDiagLog)
+         {
+            Print(StringFormat(
+               "[MarketState] breakout candidate down | close1=%.5f | close2=%.5f | lowerLevel=%.5f | lowest=%.5f | buffer=%.5f",
+               close1, close2, lowerBreakLevel, lowest, breakoutBuffer
+            ));
+            s_breakoutDiagLogTime = TimeCurrent();
+         }
          state.breakoutSubstate         = BREAKOUT_CANDIDATE_DOWN;
          state.breakoutFrozenHigh       = highest;
          state.breakoutFrozenLow        = lowest;
@@ -152,7 +224,7 @@ public:
          return REGIME_RANGE;
       }
 
-      // ── 6. 旧版回踩跟踪（保留兼容，breakoutRetestActive 路径） ─
+      // ── 6. 旧版回踩跟踪（保留兼容） ─────────────────────────
       if(state.breakoutRetestActive)
       {
          double buffer = MathMax(atr * 0.15, 0.5);
@@ -166,7 +238,7 @@ public:
                state.breakoutLevel        = 0.0;
                return REGIME_RANGE;
             }
-            if(Low[1] <= state.breakoutLevel + buffer && close1 > state.breakoutLevel + buffer && ctx.ema20 > ctx.ema50)
+            if(Low[1] <= state.breakoutLevel + buffer && close1 > state.breakoutLevel + buffer && ctx.ema12 > ctx.ema20)
             {
                state.breakoutRetestActive = false;
                return REGIME_TREND_UP;
@@ -183,7 +255,7 @@ public:
                state.breakoutLevel        = 0.0;
                return REGIME_RANGE;
             }
-            if(High[1] >= state.breakoutLevel - buffer && close1 < state.breakoutLevel - buffer && ctx.ema20 < ctx.ema50)
+            if(High[1] >= state.breakoutLevel - buffer && close1 < state.breakoutLevel - buffer && ctx.ema12 < ctx.ema20)
             {
                state.breakoutRetestActive = false;
                return REGIME_TREND_DOWN;
@@ -192,20 +264,33 @@ public:
          }
       }
 
-      // ── 7. 震荡候选门控（保留旧逻辑） ───────────────────────
+      // ── 7. 震荡候选门控 ──────────────────────────────────────
       bool rangeCandidate = (ctx.adx14 > 0 && ctx.adx14 < 18.0 && atr > 0 && rangeWidth <= atr * 3.5);
       if(rangeCandidate)
          return REGIME_RANGE;
 
       // ── 8. 趋势识别（价格结构 + EMA + ADX） ─────────────────
-      bool risingStructure  = (High[1] > High[2] && High[2] > High[3] && Low[1] > Low[2] && Low[2] > Low[3]);
-      bool fallingStructure = (High[1] < High[2] && High[2] < High[3] && Low[1] < Low[2] && Low[2] < Low[3]);
+      // 注意：ema12Slope / ema20Slope 现在是归一化值
+      //   > 0 表示向上，< 0 表示向下，与原逻辑符号含义完全一致，无需改动判断方向
+      // 放宽结构条件：只需价格在EMA上方/下方 + EMA排列即可
+      bool risingStructure  = (Close[1] > ctx.ema12 && ctx.ema12 > ctx.ema20);
+      bool fallingStructure = (Close[1] < ctx.ema12 && ctx.ema12 < ctx.ema20);
 
-      if(!weakAdx && risingStructure && ctx.ema20 > ctx.ema50 && ema20Slope > 0 && ema50Slope >= 0 && ctx.adx14 >= trendAdxThreshold)
+      if(!weakAdx && risingStructure && ctx.ema12 > ctx.ema20 && ema12Slope > 0 && ema20Slope >= 0 && ctx.adx14 >= trendAdxThreshold)
          return REGIME_TREND_UP;
 
-      if(!weakAdx && fallingStructure && ctx.ema20 < ctx.ema50 && ema20Slope < 0 && ema50Slope <= 0 && ctx.adx14 >= trendAdxThreshold)
+      if(!weakAdx && fallingStructure && ctx.ema12 < ctx.ema20 && ema12Slope < 0 && ema20Slope <= 0 && ctx.adx14 >= trendAdxThreshold)
          return REGIME_TREND_DOWN;
+
+      // ── 9. 强趋势兜底识别 ────────────────────────────────────
+      if(!weakAdx && ctx.adx14 >= trendAdxThreshold)
+      {
+         if(ctx.ema12 > ctx.ema20 && ema12Slope > 0 && ema20Slope >= 0 && close1 >= ctx.ema12 - atr * 0.10)
+            return REGIME_TREND_UP;
+
+         if(ctx.ema12 < ctx.ema20 && ema12Slope < 0 && ema20Slope <= 0 && close1 <= ctx.ema12 + atr * 0.10)
+            return REGIME_TREND_DOWN;
+      }
 
       return REGIME_RANGE;
    }

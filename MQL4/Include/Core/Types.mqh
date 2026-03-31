@@ -72,8 +72,8 @@ struct StrategyContext
    double   ask;             // 买价
 
    // ---- 指标快照（通常取上一根已收盘K线） ----
+   double   ema12;
    double   ema20;
-   double   ema50;
    double   rsi;
    double   macd;
    double   atr14;

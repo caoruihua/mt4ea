@@ -252,8 +252,9 @@ public:
             BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_BREAKOUT, Low[1], "BreakoutConfirmed-Long",
                "Directional breakout confirmed up", 15, candidate);
          }
-         else if(!HasConsecutiveLowerLows(5, 3))
+         else
          {
+            // 移除连续性过滤，直接基于EMA+ADX趋势信号
             BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_LINEAR_TREND, Low[1], "TrendUp-Long",
                "Regime trend up confirmed", 10, candidate);
          }
@@ -266,8 +267,9 @@ public:
             BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "BreakoutConfirmed-Short",
                "Directional breakout confirmed down", 15, candidate);
          }
-         else if(!HasConsecutiveHigherHighs(5, 3))
+         else
          {
+            // 移除连续性过滤，直接基于EMA+ADX趋势信号
             BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "TrendDown-Short",
                "Regime trend down confirmed", 10, candidate);
          }
