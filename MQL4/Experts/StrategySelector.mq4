@@ -2,8 +2,17 @@
 //|                                              StrategySelector.mq4 |
 //|                 Engineering Modular EA (keep legacy file intact)  |
 //+------------------------------------------------------------------+
+//| 版本号：v1.1 (2026-03-31)                                         |
+//| 更新内容：                                                         |
+//|   - 新增方向突破状态机（BreakoutSubstate）                          |
+//|   - 区间边界冻结 + 2根K线站稳确认突破                               |
+//|   - 突破确认后直接放行顺势信号（优先级15）                           |
+//|   - 突破阶段禁用 RangeEdgeReversion 反向候选                        |
+//|   - 绕过 stabilizer 延迟，突破确认后即时触发                         |
+//|   - 增加状态诊断日志（rawRegime/stableRegime/breakoutSubstate）     |
+//+------------------------------------------------------------------+
 #property strict
-#property version   "1.0"
+#property version   "1.1"
 #property description "Modular Strategy Selector EA"
 
 #include "../Include/Core/Types.mqh"
