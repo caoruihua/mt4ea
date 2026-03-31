@@ -49,6 +49,20 @@ public:
       if(ctx.regime != REGIME_RANGE)
          return false;
 
+      // 突破候选/确认阶段禁用反向区间候选，避免噪声拦截
+      int bs = state.breakoutSubstate;
+      if(bs == BREAKOUT_CANDIDATE_UP   || bs == BREAKOUT_CANDIDATE_DOWN ||
+         bs == BREAKOUT_CONFIRMED_UP   || bs == BREAKOUT_CONFIRMED_DOWN)
+      {
+         static datetime s_suppressLogTime = 0;
+         if(TimeCurrent() - s_suppressLogTime >= 30)
+         {
+            Print(StringFormat("[RangeEdgeReversion] 突破阶段抑制 | breakoutSubstate=%d | regime=%d", bs, ctx.regime));
+            s_suppressLogTime = TimeCurrent();
+         }
+         return false;
+      }
+
       int obsBars = MathMax(ctx.range_edge_observation_bars, 30);
       int tradeBars = MathMax(ctx.range_edge_trading_bars, 20);
       if(Bars <= obsBars + 2 || Bars <= tradeBars + 2)

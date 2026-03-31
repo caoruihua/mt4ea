@@ -196,6 +196,7 @@ public:
       return false;
    }
 
+private:
    bool HasConsecutiveLowerLows(int window = 5, int threshold = 3)
    {
       if(window < 2 || threshold < 1)
@@ -234,6 +235,8 @@ public:
       return count >= threshold;
    }
 
+public:
+
    bool EvaluateBestSignal(StrategyContext &ctx, RuntimeState &state, TradeSignal &best)
    {
       ResetSignal(best);
@@ -243,13 +246,31 @@ public:
 
       if(ctx.regime == REGIME_TREND_UP)
       {
-         if(!HasConsecutiveLowerLows(5, 3))
-            BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_LINEAR_TREND, Low[1], "TrendUp-Long", "Regime trend up confirmed", 10, candidate);
+         // 突破确认上破：优先级更高的顺势追单
+         if(state.breakoutSubstate == BREAKOUT_CONFIRMED_UP)
+         {
+            BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_BREAKOUT, Low[1], "BreakoutConfirmed-Long",
+               "Directional breakout confirmed up", 15, candidate);
+         }
+         else if(!HasConsecutiveLowerLows(5, 3))
+         {
+            BuildRiskRewardSignal(ctx, state, OP_BUY, STRATEGY_LINEAR_TREND, Low[1], "TrendUp-Long",
+               "Regime trend up confirmed", 10, candidate);
+         }
       }
       else if(ctx.regime == REGIME_TREND_DOWN)
       {
-         if(!HasConsecutiveHigherHighs(5, 3))
-            BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "TrendDown-Short", "Regime trend down confirmed", 10, candidate);
+         // 突破确认下破：优先级更高的顺势追单
+         if(state.breakoutSubstate == BREAKOUT_CONFIRMED_DOWN)
+         {
+            BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "BreakoutConfirmed-Short",
+               "Directional breakout confirmed down", 15, candidate);
+         }
+         else if(!HasConsecutiveHigherHighs(5, 3))
+         {
+            BuildRiskRewardSignal(ctx, state, OP_SELL, STRATEGY_BREAKOUT, High[1], "TrendDown-Short",
+               "Regime trend down confirmed", 10, candidate);
+         }
       }
       else if(ctx.regime == REGIME_BREAKOUT_SETUP_UP && state.breakoutRetestActive && Low[1] <= state.breakoutLevel + GetStopBuffer(ctx))
       {

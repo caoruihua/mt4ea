@@ -396,6 +396,33 @@ void OnTick()
    MarketRegime raw = g_marketState.Detect(g_ctx, g_state);
    g_ctx.regime = g_stabilizer.Stabilize(raw);
 
+   // 突破确认快速通道：当 breakoutSubstate 为 CONFIRMED_UP/DOWN 时，
+   // 直接覆盖 stable regime 为对应趋势，绕过 stabilizer 的 promote 延迟，
+   // 确保 2 根 K 线站稳后立即触发顺势信号。
+   if(g_state.breakoutSubstate == BREAKOUT_CONFIRMED_UP)
+      g_ctx.regime = REGIME_TREND_UP;
+   else if(g_state.breakoutSubstate == BREAKOUT_CONFIRMED_DOWN)
+      g_ctx.regime = REGIME_TREND_DOWN;
+
+   // 诊断日志：输出 raw/stable regime 与 breakout 子状态，便于追踪状态转换
+   static datetime s_diagLogTime = 0;
+   if(TimeCurrent() - s_diagLogTime >= 60)
+   {
+      g_logger.Info(StringFormat(
+         "RegimeDiag | rawRegime=%d | stableRegime=%d | breakoutSubstate=%d | frozenHigh=%.5f | frozenLow=%.5f | holdBars=%d | ema20=%.5f | ema50=%.5f | adx14=%.2f",
+         (int)raw,
+         (int)g_ctx.regime,
+         g_state.breakoutSubstate,
+         g_state.breakoutFrozenHigh,
+         g_state.breakoutFrozenLow,
+         g_state.breakoutHoldBars,
+         g_ctx.ema20,
+         g_ctx.ema50,
+         g_ctx.adx14
+      ));
+      s_diagLogTime = TimeCurrent();
+   }
+
    int existingTicket = g_executor.GetCurrentPosition(g_ctx);
 
    TradeSignal best;
@@ -416,19 +443,20 @@ void OnTick()
       }
 
       double entry = (best.orderType == OP_BUY) ? g_ctx.ask : g_ctx.bid;
-      g_logger.Info(StringFormat(
-         "Strategy triggered order | strategyId=%s | comment=%s | orderType=%s | priority=%d | reason=%s | entry=%.5f | sl=%.5f | tp=%.5f | regime=%d | session=%d",
-         StrategyIdToString(best.strategyId),
-         best.comment,
-         OrderTypeToString(best.orderType),
-         best.priority,
-         best.reason,
-         entry,
-         best.stopLoss,
-         best.takeProfit,
-         g_ctx.regime,
-         g_ctx.sessionId
-      ));
+       g_logger.Info(StringFormat(
+          "Strategy triggered order | strategyId=%s | comment=%s | orderType=%s | priority=%d | reason=%s | entry=%.5f | sl=%.5f | tp=%.5f | regime=%d | breakoutSubstate=%d | session=%d",
+          StrategyIdToString(best.strategyId),
+          best.comment,
+          OrderTypeToString(best.orderType),
+          best.priority,
+          best.reason,
+          entry,
+          best.stopLoss,
+          best.takeProfit,
+          g_ctx.regime,
+          g_state.breakoutSubstate,
+          g_ctx.sessionId
+       ));
 
       // 6) 记录入场并执行下单。
       g_state.lastEntryAttemptBarTime = Time[0];

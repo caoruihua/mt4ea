@@ -36,6 +36,17 @@ enum StrategyId
    STRATEGY_DAILY_EXTREME_ENGULFING // 日内极值吞没
 };
 
+// 突破子状态：用于识别震荡区间突破的方向与进度
+enum BreakoutSubstate
+{
+   BREAKOUT_NONE           = 0, // 无突破（震荡状态）
+   BREAKOUT_CANDIDATE_UP   = 1, // 上破候选（首根收盘突破区间上沿）
+   BREAKOUT_CANDIDATE_DOWN = 2, // 下破候选（首根收盘突破区���下沿）
+   BREAKOUT_CONFIRMED_UP   = 3, // 上破确认（连续 2 根收盘站稳区间外）
+   BREAKOUT_CONFIRMED_DOWN = 4, // 下破确认（连续 2 根收盘站稳区间外）
+   BREAKOUT_FAILED         = 5  // 突破失败（已回区间内）
+};
+
 // 斜率通道策略内部状态机阶段
 enum PullbackBaseStage
 {
@@ -231,6 +242,13 @@ struct RuntimeState
    datetime spikeLastTriggerTime;
    double   spikeLastAnchorHigh;
    double   spikeLastAnchorLow;
+
+   // ---- 突破子状态机（方向突破识别） ----
+   int      breakoutSubstate;          // BreakoutSubstate 枚举值
+   double   breakoutFrozenHigh;        // 突破候选开始时冻结的区间上沿
+   double   breakoutFrozenLow;         // 突破候选开始时冻结的区间下沿
+   datetime breakoutCandidateBarTime;  // 首次突破候选所在 K 线时间
+   int      breakoutHoldBars;          // 已连续站稳区间外的 K 线计数
 };
 
 // 交易信号：策略评估后的统一下单意图

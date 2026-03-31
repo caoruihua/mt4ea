@@ -54,6 +54,11 @@ public:
       state.spikeLastTriggerTime = 0;
       state.spikeLastAnchorHigh = 0.0;
       state.spikeLastAnchorLow = 0.0;
+      state.breakoutSubstate = BREAKOUT_NONE;
+      state.breakoutFrozenHigh = 0.0;
+      state.breakoutFrozenLow = 0.0;
+      state.breakoutCandidateBarTime = 0;
+      state.breakoutHoldBars = 0;
    }
 
    bool Save(const RuntimeState &state)
@@ -100,8 +105,13 @@ public:
       FileWrite(handle, "ChannelLastBaseBarTime=" + TimeToString(state.channelLastBaseBarTime));
       FileWrite(handle, "SpikeLastDirection=" + IntegerToString(state.spikeLastDirection));
       FileWrite(handle, "SpikeLastTriggerTime=" + TimeToString(state.spikeLastTriggerTime));
-      FileWrite(handle, "SpikeLastAnchorHigh=" + DoubleToString(state.spikeLastAnchorHigh, Digits));
-      FileWrite(handle, "SpikeLastAnchorLow=" + DoubleToString(state.spikeLastAnchorLow, Digits));
+       FileWrite(handle, "SpikeLastAnchorHigh=" + DoubleToString(state.spikeLastAnchorHigh, Digits));
+       FileWrite(handle, "SpikeLastAnchorLow=" + DoubleToString(state.spikeLastAnchorLow, Digits));
+       FileWrite(handle, "BreakoutSubstate=" + IntegerToString(state.breakoutSubstate));
+       FileWrite(handle, "BreakoutFrozenHigh=" + DoubleToString(state.breakoutFrozenHigh, Digits));
+       FileWrite(handle, "BreakoutFrozenLow=" + DoubleToString(state.breakoutFrozenLow, Digits));
+       FileWrite(handle, "BreakoutCandidateBarTime=" + TimeToString(state.breakoutCandidateBarTime));
+       FileWrite(handle, "BreakoutHoldBars=" + IntegerToString(state.breakoutHoldBars));
       FileClose(handle);
       return true;
    }
@@ -163,11 +173,16 @@ public:
          else if(key == "ChannelLastBaseBarTime") state.channelLastBaseBarTime = StringToTime(value);
          else if(key == "SpikeLastDirection") state.spikeLastDirection = (int)StringToInteger(value);
          else if(key == "SpikeLastTriggerTime") state.spikeLastTriggerTime = StringToTime(value);
-         else if(key == "SpikeLastAnchorHigh") state.spikeLastAnchorHigh = StringToDouble(value);
-         else if(key == "SpikeLastAnchorLow") state.spikeLastAnchorLow = StringToDouble(value);
-      }
+          else if(key == "SpikeLastAnchorHigh") state.spikeLastAnchorHigh = StringToDouble(value);
+          else if(key == "SpikeLastAnchorLow") state.spikeLastAnchorLow = StringToDouble(value);
+          else if(key == "BreakoutSubstate") state.breakoutSubstate = (int)StringToInteger(value);
+          else if(key == "BreakoutFrozenHigh") state.breakoutFrozenHigh = StringToDouble(value);
+          else if(key == "BreakoutFrozenLow") state.breakoutFrozenLow = StringToDouble(value);
+          else if(key == "BreakoutCandidateBarTime") state.breakoutCandidateBarTime = StringToTime(value);
+          else if(key == "BreakoutHoldBars") state.breakoutHoldBars = (int)StringToInteger(value);
+       }
 
-      FileClose(handle);
+       FileClose(handle);
       return true;
    }
 };
