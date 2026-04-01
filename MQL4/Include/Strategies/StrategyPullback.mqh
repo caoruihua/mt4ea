@@ -3,7 +3,7 @@
 
 /*
  * 文件作用：
- * - 回踩策略（EMA9 回踩 + 拒绝K线 + 通道位置过滤）
+ * - 回踩策略（快 EMA 回踩 + 拒绝K线 + 通道位置过滤）
  * - 仅在趋势有效、非低波动、且在通道下半部分时，基于已收盘K线给出回踩入场信号
  */
 
@@ -138,10 +138,10 @@ public:
       bool trendDown = (ctx.ema9 < ctx.ema21);
 
       // 中文说明：多头回踩条件
-      // 1) EMA9 > EMA21
+      // 1) 快 EMA > 慢 EMA（默认 9/21）
       // 2) 价格在通道下半部分（避免买在上沿）
-      // 3) bar[1] 回踩 EMA9 区域（±0.15*ATR）
-      // 4) 收盘重新站回 EMA9 且收阳
+      // 3) bar[1] 回踩快 EMA 区域（默认 EMA9，±0.15*ATR）
+      // 4) 收盘重新站回快 EMA 且收阳
       // 5) 下影线 >= 实体 50%
       if(trendUp && IsInLowerHalfForLong() && IsBullishPullbackReject(ctx))
       {
@@ -151,12 +151,12 @@ public:
          signal.lots = ctx.fixedLots;
          BuildInitialSLTP(OP_BUY, ctx, ctx.atr14, signal.stopLoss, signal.takeProfit);
          signal.comment = "Pullback-Long";
-         signal.reason = "bullish ema9 pullback rejection in lower half";
+          signal.reason = "bullish fast-ema pullback rejection in lower half";
          return true;
       }
 
       // 中文说明：空头回踩条件（多头镜像）
-      // 1) EMA9 < EMA21
+      // 1) 快 EMA < 慢 EMA（默认 9/21）
       // 2) 价格在通道上半部分（避免卖在下沿）
       // 3-5) 与多头镜像
       if(trendDown && IsInUpperHalfForShort() && IsBearishPullbackReject(ctx))
@@ -167,7 +167,7 @@ public:
          signal.lots = ctx.fixedLots;
          BuildInitialSLTP(OP_SELL, ctx, ctx.atr14, signal.stopLoss, signal.takeProfit);
          signal.comment = "Pullback-Short";
-         signal.reason = "bearish ema9 pullback rejection in upper half";
+          signal.reason = "bearish fast-ema pullback rejection in upper half";
          return true;
       }
 
