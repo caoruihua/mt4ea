@@ -33,15 +33,15 @@ public:
    }
 
    // 读取两策略内核的最小指标快照（基于已收盘K线）
-   bool BuildCoreSnapshot(double &ema9, double &ema21, double &atr14, double &spreadPoints, datetime &barTime, int emaFastPeriod, int emaSlowPeriod)
+   bool BuildCoreSnapshot(double &emaFast, double &emaSlow, double &atr14, double &spreadPoints, datetime &barTime, int emaFastPeriod, int emaSlowPeriod)
    {
-      ema9 = GetEMA(emaFastPeriod, 1);
-      ema21 = GetEMA(emaSlowPeriod, 1);
+      emaFast = GetEMA(emaFastPeriod, 1);
+      emaSlow = GetEMA(emaSlowPeriod, 1);
       atr14 = GetATR(1);
       spreadPoints = (Ask - Bid) / Point;
       barTime = iTime(Symbol(), PERIOD_M5, 1);
 
-      if(ema9 <= 0 || ema21 <= 0 || atr14 <= 0 || spreadPoints < 0 || barTime <= 0)
+      if(emaFast <= 0 || emaSlow <= 0 || atr14 <= 0 || spreadPoints < 0 || barTime <= 0)
          return false;
       return true;
    }

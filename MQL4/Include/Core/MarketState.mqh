@@ -34,7 +34,7 @@ public:
       out.barTime = ctx.lastClosedBarTime;
       out.blockReason = "";
 
-      if(ctx.ema9 <= 0 || ctx.ema21 <= 0 || ctx.atr14 <= 0)
+      if(ctx.emaFast <= 0 || ctx.emaSlow <= 0 || ctx.atr14 <= 0)
       {
          out.isLowVol = true;
          out.blockReason = "blocked: invalid indicator snapshot";
@@ -59,11 +59,11 @@ public:
       // 趋势判定（快/慢 EMA，默认 9/21）：
       // - 多头：快 EMA > 慢 EMA 且两者相对3根已收盘K线前都在上行
       // - 空头：快 EMA < 慢 EMA 且两者相对3根已收盘K线前都在下行
-      double ema9Prev3 = iMA(ctx.symbol, PERIOD_M5, ctx.emaFastPeriod, 0, MODE_EMA, PRICE_CLOSE, 3);
-      double ema21Prev3 = iMA(ctx.symbol, PERIOD_M5, ctx.emaSlowPeriod, 0, MODE_EMA, PRICE_CLOSE, 3);
+      double emaFastPrev3 = iMA(ctx.symbol, PERIOD_M5, ctx.emaFastPeriod, 0, MODE_EMA, PRICE_CLOSE, 3);
+      double emaSlowPrev3 = iMA(ctx.symbol, PERIOD_M5, ctx.emaSlowPeriod, 0, MODE_EMA, PRICE_CLOSE, 3);
 
-      bool upTrend = (ctx.ema9 > ctx.ema21 && ctx.ema9 > ema9Prev3 && ctx.ema21 > ema21Prev3);
-      bool downTrend = (ctx.ema9 < ctx.ema21 && ctx.ema9 < ema9Prev3 && ctx.ema21 < ema21Prev3);
+      bool upTrend = (ctx.emaFast > ctx.emaSlow && ctx.emaFast > emaFastPrev3 && ctx.emaSlow > emaSlowPrev3);
+      bool downTrend = (ctx.emaFast < ctx.emaSlow && ctx.emaFast < emaFastPrev3 && ctx.emaSlow < emaSlowPrev3);
 
       if(upTrend)
       {

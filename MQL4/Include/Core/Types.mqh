@@ -44,8 +44,8 @@ struct StrategyContext
    // ---- 指标快照（取上一根已收盘K线） ----
    int      emaFastPeriod;   // 快 EMA 周期（默认 9）
    int      emaSlowPeriod;   // 慢 EMA 周期（默认 21）
-   double   ema9;            // 当前快 EMA 值，用于趋势判断
-   double   ema21;           // 当前慢 EMA 值，用于趋势判断
+   double   emaFast;         // 当前快 EMA 值，用于趋势判断
+   double   emaSlow;         // 当前慢 EMA 值，用于趋势判断
    double   atr14;           // ATR(14) 用于波动率过滤和止损止盈计算
    double   spreadPoints;    // 当前点差（点数）
    

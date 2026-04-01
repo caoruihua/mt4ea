@@ -46,9 +46,9 @@ datetime           g_lastProcessedClosedBar = 0;
 
 bool FillContext()
 {
-   double ema9, ema21, atr14, spreadPoints;
+   double emaFast, emaSlow, atr14, spreadPoints;
    datetime barTime;
-   if(!g_signalEngine.BuildCoreSnapshot(ema9, ema21, atr14, spreadPoints, barTime, EMAFastPeriod, EMASlowPeriod))
+   if(!g_signalEngine.BuildCoreSnapshot(emaFast, emaSlow, atr14, spreadPoints, barTime, EMAFastPeriod, EMASlowPeriod))
       return false;
 
    g_ctx.symbol = Symbol();
@@ -61,8 +61,8 @@ bool FillContext()
    g_ctx.ask = Ask;
    g_ctx.emaFastPeriod = EMAFastPeriod;
    g_ctx.emaSlowPeriod = EMASlowPeriod;
-   g_ctx.ema9 = ema9;
-   g_ctx.ema21 = ema21;
+   g_ctx.emaFast = emaFast;
+   g_ctx.emaSlow = emaSlow;
    g_ctx.atr14 = atr14;
    g_ctx.spreadPoints = spreadPoints;
 
