@@ -69,8 +69,8 @@ public:
          return false;
       }
 
-      bool trendUp = (ctx.ema9 > ctx.ema21);
-      bool trendDown = (ctx.ema9 < ctx.ema21);
+      bool trendUp = (ctx.emaFast > ctx.emaSlow);
+      bool trendDown = (ctx.emaFast < ctx.emaSlow);
 
       double body = MathAbs(Close[1] - Open[1]);
       double high2 = MathMax(High[2], High[3]);

@@ -81,8 +81,8 @@ private:
          return false;
 
       double zoneTolerance = atr * 0.15;
-      bool touchZone = (MathAbs(low1 - ctx.ema9) <= zoneTolerance || low1 <= ctx.ema9 + zoneTolerance);
-      bool closeBack = (close1 > ctx.ema9 && close1 > open1);
+      bool touchZone = (MathAbs(low1 - ctx.emaFast) <= zoneTolerance || low1 <= ctx.emaFast + zoneTolerance);
+      bool closeBack = (close1 > ctx.emaFast && close1 > open1);
       double lowerWick = MathMin(open1, close1) - low1;
       bool wickReject = (lowerWick >= body * 0.50);
       return (touchZone && closeBack && wickReject);
@@ -102,8 +102,8 @@ private:
          return false;
 
       double zoneTolerance = atr * 0.15;
-      bool touchZone = (MathAbs(high1 - ctx.ema9) <= zoneTolerance || high1 >= ctx.ema9 - zoneTolerance);
-      bool closeBack = (close1 < ctx.ema9 && close1 < open1);
+      bool touchZone = (MathAbs(high1 - ctx.emaFast) <= zoneTolerance || high1 >= ctx.emaFast - zoneTolerance);
+      bool closeBack = (close1 < ctx.emaFast && close1 < open1);
       double upperWick = high1 - MathMax(open1, close1);
       bool wickReject = (upperWick >= body * 0.50);
       return (touchZone && closeBack && wickReject);
@@ -134,8 +134,8 @@ public:
          return false;
       }
 
-      bool trendUp = (ctx.ema9 > ctx.ema21);
-      bool trendDown = (ctx.ema9 < ctx.ema21);
+      bool trendUp = (ctx.emaFast > ctx.emaSlow);
+      bool trendDown = (ctx.emaFast < ctx.emaSlow);
 
       // 中文说明：多头回踩条件
       // 1) 快 EMA > 慢 EMA（默认 9/21）
@@ -151,7 +151,7 @@ public:
          signal.lots = ctx.fixedLots;
          BuildInitialSLTP(OP_BUY, ctx, ctx.atr14, signal.stopLoss, signal.takeProfit);
          signal.comment = "Pullback-Long";
-          signal.reason = "bullish fast-ema pullback rejection in lower half";
+         signal.reason = "bullish fast-ema pullback rejection in lower half";
          return true;
       }
 
