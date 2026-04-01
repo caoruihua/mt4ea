@@ -42,8 +42,8 @@ struct StrategyContext
    double   ask;             // 买价
    
    // ---- 指标快照（取上一根已收盘K线） ----
-   double   ema15;           // EMA(15) 用于趋势判断
-   double   ema30;           // EMA(30) 用于趋势判断  
+   double   ema9;            // EMA(9) 用于趋势判断
+   double   ema21;           // EMA(21) 用于趋势判断
    double   atr14;           // ATR(14) 用于波动率过滤和止损止盈计算
    double   spreadPoints;    // 当前点差（点数）
    

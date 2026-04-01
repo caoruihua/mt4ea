@@ -3,8 +3,8 @@
 
 /*
  * 文件作用：
- * - 回踩策略（EMA15 回踩 + 拒绝K线）
- * - 仅在趋势有效且非低波动时，基于已收盘K线给出回踩入场信号
+ * - 回踩策略（EMA9 回踩 + 拒绝K线 + 通道位置过滤）
+ * - 仅在趋势有效、非低波动、且在通道下半部分时，基于已收盘K线给出回踩入场信号
  */
 
 #include "../Core/StrategyBase.mqh"
@@ -18,6 +18,37 @@ private:
       double spreadPoints = MathMax(ctx.spreadPoints, 0.0);
       double ratio = (spreadPoints > 0.0) ? (atrPoints / spreadPoints) : 9999.0;
       return (atrPoints < 120.0 || ratio < 3.0);
+   }
+
+   // 计算近期N根K线的通道高低点
+   void CalcChannel(int periods, double &channelHigh, double &channelLow)
+   {
+      int highestBar = iHighest(NULL, 0, MODE_HIGH, periods, 1);
+      int lowestBar = iLowest(NULL, 0, MODE_LOW, periods, 1);
+      channelHigh = (highestBar >= 0) ? High[highestBar] : 0.0;
+      channelLow = (lowestBar >= 0) ? Low[lowestBar] : 0.0;
+   }
+
+   // 检查多头是否在通道下半部分（避免买在通道上沿）
+   bool IsInLowerHalfForLong()
+   {
+      double channelHigh, channelLow;
+      CalcChannel(20, channelHigh, channelLow);  // 20根K线通道
+      if(channelHigh <= channelLow)
+         return false;
+      double midLine = (channelHigh + channelLow) / 2.0;
+      return (Close[1] < midLine);  // 收盘在通道下半部分
+   }
+
+   // 检查空头是否在通道上半部分（避免卖在通道下沿）
+   bool IsInUpperHalfForShort()
+   {
+      double channelHigh, channelLow;
+      CalcChannel(20, channelHigh, channelLow);  // 20根K线通道
+      if(channelHigh <= channelLow)
+         return false;
+      double midLine = (channelHigh + channelLow) / 2.0;
+      return (Close[1] > midLine);  // 收盘在通道上半部分
    }
 
    void BuildInitialSLTP(int orderType, const StrategyContext &ctx, double atr, double &sl, double &tp)
@@ -50,8 +81,8 @@ private:
          return false;
 
       double zoneTolerance = atr * 0.15;
-      bool touchZone = (MathAbs(low1 - ctx.ema15) <= zoneTolerance || low1 <= ctx.ema15 + zoneTolerance);
-      bool closeBack = (close1 > ctx.ema15 && close1 > open1);
+      bool touchZone = (MathAbs(low1 - ctx.ema9) <= zoneTolerance || low1 <= ctx.ema9 + zoneTolerance);
+      bool closeBack = (close1 > ctx.ema9 && close1 > open1);
       double lowerWick = MathMin(open1, close1) - low1;
       bool wickReject = (lowerWick >= body * 0.50);
       return (touchZone && closeBack && wickReject);
@@ -71,8 +102,8 @@ private:
          return false;
 
       double zoneTolerance = atr * 0.15;
-      bool touchZone = (MathAbs(high1 - ctx.ema15) <= zoneTolerance || high1 >= ctx.ema15 - zoneTolerance);
-      bool closeBack = (close1 < ctx.ema15 && close1 < open1);
+      bool touchZone = (MathAbs(high1 - ctx.ema9) <= zoneTolerance || high1 >= ctx.ema9 - zoneTolerance);
+      bool closeBack = (close1 < ctx.ema9 && close1 < open1);
       double upperWick = high1 - MathMax(open1, close1);
       bool wickReject = (upperWick >= body * 0.50);
       return (touchZone && closeBack && wickReject);
@@ -103,15 +134,16 @@ public:
          return false;
       }
 
-      bool trendUp = (ctx.ema15 > ctx.ema30);
-      bool trendDown = (ctx.ema15 < ctx.ema30);
+      bool trendUp = (ctx.ema9 > ctx.ema21);
+      bool trendDown = (ctx.ema9 < ctx.ema21);
 
       // 中文说明：多头回踩条件
-      // 1) EMA15 > EMA30
-      // 2) bar[1] 回踩 EMA15 区域（±0.15*ATR）
-      // 3) 收盘重新站回 EMA15 且收阳
-      // 4) 下影线 >= 实体 50%
-      if(trendUp && IsBullishPullbackReject(ctx))
+      // 1) EMA9 > EMA21
+      // 2) 价格在通道下半部分（避免买在上沿）
+      // 3) bar[1] 回踩 EMA9 区域（±0.15*ATR）
+      // 4) 收盘重新站回 EMA9 且收阳
+      // 5) 下影线 >= 实体 50%
+      if(trendUp && IsInLowerHalfForLong() && IsBullishPullbackReject(ctx))
       {
          signal.valid = true;
          signal.strategyId = STRATEGY_PULLBACK;
@@ -119,12 +151,15 @@ public:
          signal.lots = ctx.fixedLots;
          BuildInitialSLTP(OP_BUY, ctx, ctx.atr14, signal.stopLoss, signal.takeProfit);
          signal.comment = "Pullback-Long";
-         signal.reason = "bullish ema15 pullback rejection";
+         signal.reason = "bullish ema9 pullback rejection in lower half";
          return true;
       }
 
       // 中文说明：空头回踩条件（多头镜像）
-      if(trendDown && IsBearishPullbackReject(ctx))
+      // 1) EMA9 < EMA21
+      // 2) 价格在通道上半部分（避免卖在下沿）
+      // 3-5) 与多头镜像
+      if(trendDown && IsInUpperHalfForShort() && IsBearishPullbackReject(ctx))
       {
          signal.valid = true;
          signal.strategyId = STRATEGY_PULLBACK;
@@ -132,7 +167,7 @@ public:
          signal.lots = ctx.fixedLots;
          BuildInitialSLTP(OP_SELL, ctx, ctx.atr14, signal.stopLoss, signal.takeProfit);
          signal.comment = "Pullback-Short";
-         signal.reason = "bearish ema15 pullback rejection";
+         signal.reason = "bearish ema9 pullback rejection in upper half";
          return true;
       }
 
