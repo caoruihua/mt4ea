@@ -4,7 +4,11 @@
 /*
  * 文件作用：
  * - 将 RuntimeState 保存到 EA_State.txt
- * - EA 重启后读取状态，保证日内统计可续接
+ * - EA 重启后读取状态，保证日内统计和持仓状态可续接
+ * 
+ * 持久化原则：
+ * - 只保存无法安全重新计算的字段（日统计、入场状态、动态止损止盈状态）
+ * - 可重新计算的字段（如市场结构、指标值）不保存
  */
 
 #include "Types.mqh"
@@ -12,110 +16,49 @@
 class CStateStore
 {
 public:
+   // 初始化运行时状态为默认值
    void InitDefaults(RuntimeState &state)
    {
-      state.dailyProfit = 0.0;
-      state.dailyLoss = 0.0;
-      state.dailyPriceDelta = 0.0;
-      state.circuitBreakerActive = false;
-      state.rangeHigh = 0.0;
-      state.rangeLow = 0.0;
-      state.breakoutLevel = 0.0;
-      state.breakoutDirection = 0;
-      state.breakoutRetestActive = false;
-      state.asianHigh = 0.0;
-      state.asianLow = 0.0;
-      state.euroBreakoutState = 0;
-      state.lastResetDate = 0;
-      state.session1Trades = 0;
-      state.session3Trades = 0;
-      state.session2Traded = false;
-      state.session5Trades = 0;
-      state.channelTrades = 0;
-      state.fakeBreakoutLow = 0.0;
-      state.fakeBreakoutHigh = 0.0;
-      state.dayExtremeDate = 0;
-      state.dayHigh = 0.0;
-      state.dayLow = 0.0;
-      state.countersResetDate = 0;
-      state.asianRangeDate = 0;
+      state.dayKey = 0;
+      state.dailyLocked = false;
+      state.dailyClosedProfit = 0.0;
+      state.tradesToday = 0;
       state.lastEntryBarTime = 0;
-      state.lastEntryAttemptBarTime = 0;
-      state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
-      state.channelSetupTime = 0;
-      state.channelPullbackHigh = 0.0;
-      state.channelSupportLevel = 0.0;
-      state.channelFailedBreakdownCount = 0;
-      state.channelBaseBarCount = 0;
-      state.channelBaseCloseAverage = 0.0;
-      state.channelRecoveryLevel = 0.0;
-      state.channelLastBaseBarTime = 0;
-      state.spikeLastDirection = 0;
-      state.spikeLastTriggerTime = 0;
-      state.spikeLastAnchorHigh = 0.0;
-      state.spikeLastAnchorLow = 0.0;
-      state.breakoutSubstate = BREAKOUT_NONE;
-      state.breakoutFrozenHigh = 0.0;
-      state.breakoutFrozenLow = 0.0;
-      state.breakoutCandidateBarTime = 0;
-      state.breakoutHoldBars = 0;
+      state.entryPrice = 0.0;
+      state.entryAtr = 0.0;
+      state.highestCloseSinceEntry = 0.0;
+      state.lowestCloseSinceEntry = 0.0;
+      state.trailingActive = false;
    }
 
+   // 保存运行时状态到文件
    bool Save(const RuntimeState &state)
    {
       int handle = FileOpen("EA_State.txt", FILE_WRITE | FILE_TXT);
       if(handle == INVALID_HANDLE)
          return false;
 
-      FileWrite(handle, "DailyProfit=" + DoubleToString(state.dailyProfit, 2));
-      FileWrite(handle, "DailyLoss=" + DoubleToString(state.dailyLoss, 2));
-      FileWrite(handle, "DailyPriceDelta=" + DoubleToString(state.dailyPriceDelta, 2));
-      FileWrite(handle, "CircuitBreakerActive=" + IntegerToString(state.circuitBreakerActive ? 1 : 0));
-      FileWrite(handle, "RangeHigh=" + DoubleToString(state.rangeHigh, Digits));
-      FileWrite(handle, "RangeLow=" + DoubleToString(state.rangeLow, Digits));
-      FileWrite(handle, "BreakoutLevel=" + DoubleToString(state.breakoutLevel, Digits));
-      FileWrite(handle, "BreakoutDirection=" + IntegerToString(state.breakoutDirection));
-      FileWrite(handle, "BreakoutRetestActive=" + IntegerToString(state.breakoutRetestActive ? 1 : 0));
-      FileWrite(handle, "AsianHigh=" + DoubleToString(state.asianHigh, Digits));
-      FileWrite(handle, "AsianLow=" + DoubleToString(state.asianLow, Digits));
-      FileWrite(handle, "EuroBreakoutState=" + IntegerToString(state.euroBreakoutState));
-      FileWrite(handle, "LastResetDate=" + TimeToString(state.lastResetDate));
-      FileWrite(handle, "Session1Trades=" + IntegerToString(state.session1Trades));
-      FileWrite(handle, "Session3Trades=" + IntegerToString(state.session3Trades));
-      FileWrite(handle, "Session2Traded=" + IntegerToString(state.session2Traded ? 1 : 0));
-      FileWrite(handle, "Session5Trades=" + IntegerToString(state.session5Trades));
-      FileWrite(handle, "ChannelTrades=" + IntegerToString(state.channelTrades));
-      FileWrite(handle, "FakeBreakoutLow=" + DoubleToString(state.fakeBreakoutLow, Digits));
-      FileWrite(handle, "FakeBreakoutHigh=" + DoubleToString(state.fakeBreakoutHigh, Digits));
-      FileWrite(handle, "DayExtremeDate=" + TimeToString(state.dayExtremeDate));
-      FileWrite(handle, "DayHigh=" + DoubleToString(state.dayHigh, Digits));
-      FileWrite(handle, "DayLow=" + DoubleToString(state.dayLow, Digits));
-      FileWrite(handle, "CountersResetDate=" + TimeToString(state.countersResetDate));
-      FileWrite(handle, "AsianRangeDate=" + TimeToString(state.asianRangeDate));
+      // 日统计与风控状态（重启关键）
+      FileWrite(handle, "DayKey=" + TimeToString(state.dayKey));
+      FileWrite(handle, "DailyLocked=" + IntegerToString(state.dailyLocked ? 1 : 0));
+      FileWrite(handle, "DailyClosedProfit=" + DoubleToString(state.dailyClosedProfit, 2));
+      FileWrite(handle, "TradesToday=" + IntegerToString(state.tradesToday));
+      
+      // 入场状态（重启后需要恢复当前持仓管理）
       FileWrite(handle, "LastEntryBarTime=" + TimeToString(state.lastEntryBarTime));
-      FileWrite(handle, "LastEntryAttemptBarTime=" + TimeToString(state.lastEntryAttemptBarTime));
-      FileWrite(handle, "ChannelPullbackStage=" + IntegerToString(state.channelPullbackStage));
-      FileWrite(handle, "ChannelSetupTime=" + TimeToString(state.channelSetupTime));
-      FileWrite(handle, "ChannelPullbackHigh=" + DoubleToString(state.channelPullbackHigh, Digits));
-      FileWrite(handle, "ChannelSupportLevel=" + DoubleToString(state.channelSupportLevel, Digits));
-      FileWrite(handle, "ChannelFailedBreakdownCount=" + IntegerToString(state.channelFailedBreakdownCount));
-      FileWrite(handle, "ChannelBaseBarCount=" + IntegerToString(state.channelBaseBarCount));
-      FileWrite(handle, "ChannelBaseCloseAverage=" + DoubleToString(state.channelBaseCloseAverage, Digits));
-      FileWrite(handle, "ChannelRecoveryLevel=" + DoubleToString(state.channelRecoveryLevel, Digits));
-      FileWrite(handle, "ChannelLastBaseBarTime=" + TimeToString(state.channelLastBaseBarTime));
-      FileWrite(handle, "SpikeLastDirection=" + IntegerToString(state.spikeLastDirection));
-      FileWrite(handle, "SpikeLastTriggerTime=" + TimeToString(state.spikeLastTriggerTime));
-       FileWrite(handle, "SpikeLastAnchorHigh=" + DoubleToString(state.spikeLastAnchorHigh, Digits));
-       FileWrite(handle, "SpikeLastAnchorLow=" + DoubleToString(state.spikeLastAnchorLow, Digits));
-       FileWrite(handle, "BreakoutSubstate=" + IntegerToString(state.breakoutSubstate));
-       FileWrite(handle, "BreakoutFrozenHigh=" + DoubleToString(state.breakoutFrozenHigh, Digits));
-       FileWrite(handle, "BreakoutFrozenLow=" + DoubleToString(state.breakoutFrozenLow, Digits));
-       FileWrite(handle, "BreakoutCandidateBarTime=" + TimeToString(state.breakoutCandidateBarTime));
-       FileWrite(handle, "BreakoutHoldBars=" + IntegerToString(state.breakoutHoldBars));
+      FileWrite(handle, "EntryPrice=" + DoubleToString(state.entryPrice, 5));
+      FileWrite(handle, "EntryAtr=" + DoubleToString(state.entryAtr, 5));
+      
+      // 动态止损止盈跟踪状态（重启后需要续接追踪逻辑）
+      FileWrite(handle, "HighestCloseSinceEntry=" + DoubleToString(state.highestCloseSinceEntry, 5));
+      FileWrite(handle, "LowestCloseSinceEntry=" + DoubleToString(state.lowestCloseSinceEntry, 5));
+      FileWrite(handle, "TrailingActive=" + IntegerToString(state.trailingActive ? 1 : 0));
+      
       FileClose(handle);
       return true;
    }
 
+   // 从文件加载运行时状态
    bool Load(RuntimeState &state)
    {
       int handle = FileOpen("EA_State.txt", FILE_READ | FILE_TXT);
@@ -135,54 +78,19 @@ public:
          string key = StringSubstr(line, 0, pos);
          string value = StringSubstr(line, pos + 1);
 
-         if(key == "DailyProfit") state.dailyProfit = StringToDouble(value);
-         else if(key == "DailyLoss") state.dailyLoss = StringToDouble(value);
-         else if(key == "DailyPriceDelta") state.dailyPriceDelta = StringToDouble(value);
-         else if(key == "CircuitBreakerActive") state.circuitBreakerActive = (StringToInteger(value) != 0);
-         else if(key == "RangeHigh") state.rangeHigh = StringToDouble(value);
-         else if(key == "RangeLow") state.rangeLow = StringToDouble(value);
-         else if(key == "BreakoutLevel") state.breakoutLevel = StringToDouble(value);
-         else if(key == "BreakoutDirection") state.breakoutDirection = (int)StringToInteger(value);
-         else if(key == "BreakoutRetestActive") state.breakoutRetestActive = (StringToInteger(value) != 0);
-         else if(key == "AsianHigh") state.asianHigh = StringToDouble(value);
-         else if(key == "AsianLow") state.asianLow = StringToDouble(value);
-         else if(key == "EuroBreakoutState") state.euroBreakoutState = (int)StringToInteger(value);
-         else if(key == "LastResetDate") state.lastResetDate = StringToTime(value);
-         else if(key == "Session1Trades") state.session1Trades = (int)StringToInteger(value);
-         else if(key == "Session3Trades") state.session3Trades = (int)StringToInteger(value);
-         else if(key == "Session2Traded") state.session2Traded = (StringToInteger(value) != 0);
-         else if(key == "Session5Trades") state.session5Trades = (int)StringToInteger(value);
-         else if(key == "ChannelTrades") state.channelTrades = (int)StringToInteger(value);
-         else if(key == "FakeBreakoutLow") state.fakeBreakoutLow = StringToDouble(value);
-         else if(key == "FakeBreakoutHigh") state.fakeBreakoutHigh = StringToDouble(value);
-         else if(key == "DayExtremeDate") state.dayExtremeDate = StringToTime(value);
-         else if(key == "DayHigh") state.dayHigh = StringToDouble(value);
-         else if(key == "DayLow") state.dayLow = StringToDouble(value);
-         else if(key == "CountersResetDate") state.countersResetDate = StringToTime(value);
-         else if(key == "AsianRangeDate") state.asianRangeDate = StringToTime(value);
+         if(key == "DayKey") state.dayKey = StringToTime(value);
+         else if(key == "DailyLocked") state.dailyLocked = (StringToInteger(value) != 0);
+         else if(key == "DailyClosedProfit") state.dailyClosedProfit = StringToDouble(value);
+         else if(key == "TradesToday") state.tradesToday = (int)StringToInteger(value);
          else if(key == "LastEntryBarTime") state.lastEntryBarTime = StringToTime(value);
-         else if(key == "LastEntryAttemptBarTime") state.lastEntryAttemptBarTime = StringToTime(value);
-         else if(key == "ChannelPullbackStage") state.channelPullbackStage = (int)StringToInteger(value);
-         else if(key == "ChannelSetupTime") state.channelSetupTime = StringToTime(value);
-         else if(key == "ChannelPullbackHigh") state.channelPullbackHigh = StringToDouble(value);
-         else if(key == "ChannelSupportLevel") state.channelSupportLevel = StringToDouble(value);
-         else if(key == "ChannelFailedBreakdownCount") state.channelFailedBreakdownCount = (int)StringToInteger(value);
-         else if(key == "ChannelBaseBarCount") state.channelBaseBarCount = (int)StringToInteger(value);
-         else if(key == "ChannelBaseCloseAverage") state.channelBaseCloseAverage = StringToDouble(value);
-         else if(key == "ChannelRecoveryLevel") state.channelRecoveryLevel = StringToDouble(value);
-         else if(key == "ChannelLastBaseBarTime") state.channelLastBaseBarTime = StringToTime(value);
-         else if(key == "SpikeLastDirection") state.spikeLastDirection = (int)StringToInteger(value);
-         else if(key == "SpikeLastTriggerTime") state.spikeLastTriggerTime = StringToTime(value);
-          else if(key == "SpikeLastAnchorHigh") state.spikeLastAnchorHigh = StringToDouble(value);
-          else if(key == "SpikeLastAnchorLow") state.spikeLastAnchorLow = StringToDouble(value);
-          else if(key == "BreakoutSubstate") state.breakoutSubstate = (int)StringToInteger(value);
-          else if(key == "BreakoutFrozenHigh") state.breakoutFrozenHigh = StringToDouble(value);
-          else if(key == "BreakoutFrozenLow") state.breakoutFrozenLow = StringToDouble(value);
-          else if(key == "BreakoutCandidateBarTime") state.breakoutCandidateBarTime = StringToTime(value);
-          else if(key == "BreakoutHoldBars") state.breakoutHoldBars = (int)StringToInteger(value);
-       }
+         else if(key == "EntryPrice") state.entryPrice = StringToDouble(value);
+         else if(key == "EntryAtr") state.entryAtr = StringToDouble(value);
+         else if(key == "HighestCloseSinceEntry") state.highestCloseSinceEntry = StringToDouble(value);
+         else if(key == "LowestCloseSinceEntry") state.lowestCloseSinceEntry = StringToDouble(value);
+         else if(key == "TrailingActive") state.trailingActive = (StringToInteger(value) != 0);
+      }
 
-       FileClose(handle);
+      FileClose(handle);
       return true;
    }
 };

@@ -2,17 +2,17 @@
 //|                                              StrategySelector.mq4 |
 //|                 Engineering Modular EA (keep legacy file intact)  |
 //+------------------------------------------------------------------+
-//| 版本号：v1.1 (2026-03-31)                                         |
+//| 版本号：v1.3 (2026-04-01)                                         |
 //| 更新内容：                                                         |
-//|   - 新增方向突破状态机（BreakoutSubstate）                          |
-//|   - 区间边界冻结 + 2根K线站稳确认突破                               |
-//|   - 突破确认后直接放行顺势信号（优先级15）                           |
-//|   - 突破阶段禁用 RangeEdgeReversion 反向候选                        |
-//|   - 绕过 stabilizer 延迟，突破确认后即时触发                         |
-//|   - 增加状态诊断日志（rawRegime/stableRegime/breakoutSubstate）     |
+//|   - 新增 SlopeChannel 做空压力区入场模式参数                        |
+//|   - 参数：Channel_Bearish_Entry_Mode="pressure_zone"                |
+//|   - 参数：Channel_Bearish_Zone_Depth_USD=2.0                         |
+//|   - 参数：Channel_Bearish_Overshoot_Cap_USD=1.2                      |
+//|   - 参数：Channel_Bearish_SwingHigh_Lookback=5                       |
+//|   - 参数：Channel_Bearish_SL_Buffer_USD=0.8                          |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.1"
+#property version   "1.3"
 #property description "Modular Strategy Selector EA"
 
 #include "../Include/Core/Types.mqh"
@@ -32,11 +32,11 @@ input int      LogLevel       = 1;
 input bool     EnableStrategyHealthReport = false;
 input bool     UseAtrStopBuffer = true;
 input bool     EnableGlobalProfitLockStop = true;
-input double   GlobalProfitLockTriggerUsd = 5.0;
+input double   GlobalProfitLockTriggerUsd = 4.0;
 input double   GlobalProfitLockOffsetUsd  = 0.5;
-input double   SL_Buffer_ATR_Multiplier = 0.30;
+input double   SL_Buffer_ATR_Multiplier = 0.45;
 input double   SL_Buffer_Fixed_USD = 1.50;
-input double   TakeProfit_R_Multiple = 2.0;
+input double   TakeProfit_R_Multiple = 1.7;
 input double   DailyPriceDeltaTargetUsd = 40.0;
 
 input double   Session1_3_SL_USD                  = 10.0;
@@ -75,12 +75,19 @@ input bool     Channel_Enable_Stall_Filter        = true;
 input int      Channel_Stall_Lookback_Bars        = 10;
 input double   Channel_Stall_Max_High_Progress_USD= 1.5;
 input double   Channel_Stall_Close_Band_Max_USD   = 4.0;
-input double   Channel_Stall_Compression_Ratio    = 0.60;
-input int      Channel_Stall_Min_Conditions       = 2;
+    input double   Channel_Stall_Compression_Ratio    = 0.60;
+    input int      Channel_Stall_Min_Conditions       = 2;
+
+    // Bearish SlopeChannel parameters (for short pressure zone entry)
+    input string   Channel_Bearish_Entry_Mode         = "pressure_zone";
+    input double   Channel_Bearish_Zone_Depth_USD     = 2.0;
+    input double   Channel_Bearish_Overshoot_Cap_USD  = 1.2;
+    input int      Channel_Bearish_SwingHigh_Lookback = 5;
+    input double   Channel_Bearish_SL_Buffer_USD      = 0.8;
 
 input int      RangeEdge_Observation_Bars         = 30;
 input int      RangeEdge_Trading_Bars             = 20;
-input double   RangeEdge_EntryTolerance_USD       = 1.0;
+input double   RangeEdge_EntryTolerance_USD       = 1.6;
 input double   RangeEdge_SL_Buffer_USD            = 5.0;
 input bool     RangeEdge_EnableProtection         = false;
 input double   RangeEdge_Protection_Trigger_USD   = 2.0;
@@ -104,8 +111,8 @@ input int      Engulfing_Priority                 = 15;
 
 input bool     Spike_Enable                       = true;
 input int      Spike_Window_Seconds               = 120;
-input double   Spike_Trigger_USD                  = 20.0;
-input double   Spike_Max_Pullback_Ratio           = 0.40;
+input double   Spike_Trigger_USD                  = 16.0;
+input double   Spike_Max_Pullback_Ratio           = 0.45;
 input double   Spike_SL_USD                       = 20.0;
 input double   Spike_TP_USD                       = 35.0;
 input bool     Spike_Log_Verbose                  = true;
@@ -271,10 +278,16 @@ void FillContext()
    g_ctx.channel_stall_lookback_bars = Channel_Stall_Lookback_Bars;
    g_ctx.channel_stall_max_high_progress_usd = Channel_Stall_Max_High_Progress_USD;
    g_ctx.channel_stall_close_band_max_usd = Channel_Stall_Close_Band_Max_USD;
-   g_ctx.channel_stall_compression_ratio = Channel_Stall_Compression_Ratio;
-   g_ctx.channel_stall_min_conditions = Channel_Stall_Min_Conditions;
+    g_ctx.channel_stall_compression_ratio = Channel_Stall_Compression_Ratio;
+    g_ctx.channel_stall_min_conditions = Channel_Stall_Min_Conditions;
 
-   g_ctx.range_edge_observation_bars = RangeEdge_Observation_Bars;
+    g_ctx.channel_bearish_entry_mode = Channel_Bearish_Entry_Mode;
+    g_ctx.channel_bearish_zone_depth_usd = Channel_Bearish_Zone_Depth_USD;
+    g_ctx.channel_bearish_overshoot_cap_usd = Channel_Bearish_Overshoot_Cap_USD;
+    g_ctx.channel_bearish_swinghigh_lookback = Channel_Bearish_SwingHigh_Lookback;
+    g_ctx.channel_bearish_sl_buffer_usd = Channel_Bearish_SL_Buffer_USD;
+
+    g_ctx.range_edge_observation_bars = RangeEdge_Observation_Bars;
    g_ctx.range_edge_trading_bars = RangeEdge_Trading_Bars;
    g_ctx.range_edge_entry_tolerance_usd = RangeEdge_EntryTolerance_USD;
    g_ctx.range_edge_sl_buffer_usd = RangeEdge_SL_Buffer_USD;
