@@ -20,7 +20,7 @@
 
 - 品种：`XAUUSD`
 - 周期：`M5`
-- 指标框架：`EMA15/30 + ATR14`
+- 指标框架：`EMAFastPeriod/EMASlowPeriod`（默认 `9/21`）+ `ATR14`
 - 固定手数：`0.01`
 - 同一 `symbol + magic` 最多 `1` 个持仓
 - 日内收益达到 `+$50` 后，当天停止新开仓（次日恢复）
@@ -47,7 +47,7 @@ MQL4/
    ├─ Core/
    │  ├─ Types.mqh                         # 核心类型（上下文/状态/信号）
    │  ├─ SessionClock.mqh                  # 日键/时间工具
-   │  ├─ SignalEngine.mqh                  # EMA15/30 + ATR14 指标快照
+   │  ├─ SignalEngine.mqh                  # 可配置快/慢 EMA + ATR14 指标快照
    │  ├─ MarketState.mqh                   # 市场过滤（趋势有效/低波动）
    │  ├─ RiskManager.mqh                   # 日内收益锁定与跨日重置
    │  ├─ TradeExecutor.mqh                 # 下单/平仓/动态保护执行
@@ -70,7 +70,7 @@ MQL4/
 
 `StrategySelector.mq4` 当前流程：
 
-1. 构建统一上下文（EMA15/30、ATR14、点差、已收盘 bar 时间）
+1. 构建统一上下文（快/慢 EMA、ATR14、点差、已收盘 bar 时间）
 2. 同步日内风险状态（按服务器日键重置，计算当日已平仓净收益）
 3. 每 tick 执行已有持仓保护（动态止盈止损）
 4. 仅在“新收盘 bar”评估新开仓
@@ -87,8 +87,8 @@ MQL4/
 
 方向框架：
 
-- 多头：`EMA15 > EMA30`
-- 空头：`EMA15 < EMA30`
+- 多头：快 EMA > 慢 EMA（默认 `9 > 21`）
+- 空头：快 EMA < 慢 EMA（默认 `9 < 21`）
 
 入场要点（镜像规则）：
 
@@ -100,7 +100,7 @@ MQL4/
 
 入场要点（镜像规则）：
 
-- 价格回踩 `EMA15` 区域（容差按 ATR）
+- 价格回踩快 EMA 区域（默认快线为 `EMA9`，容差按 ATR）
 - 收盘重新回到趋势方向
 - 影线拒绝满足最小比例约束
 
