@@ -1,111 +1,209 @@
-# MT4EA Strategy Selector
+# MT4EA StrategySelector（极简双策略版）
 
-一个基于 MT4（MQL4）的多策略自动交易项目，核心目标是：
+> 一个基于 MT4（MQL4）的现货黄金（XAUUSD）自动交易项目。  
+> 当前版本已从“多策略复杂架构”重构为**双策略极简内核**，仅保留：
+>
+> - **趋势延续策略（TrendContinuation）**
+> - **回踩策略（Pullback）**
 
-- 在同一个 EA 中统一管理多种入场策略
-- 根据市场状态动态选择当前最合适的策略信号
-- 统一执行风控（止损止盈、熔断、利润保护、状态持久化）
+---
 
-如果你只看一眼就想知道这个项目做什么：  
-这是一个“**多策略信号引擎 + 统一交易执行与风控**”的黄金（XAUUSD）自动交易框架。
+## 1. 项目定位
 
-> ⚠️ **重点提醒（使用方式）**：本项目**不能直接下载后立即运行**。需要将仓库内 `MQL4/Experts`、`MQL4/Include` 等对应目录与文件，按 MT4 数据目录结构复制到终端的 `MQL4` 目录下（例如 `.../MQL4/Experts`、`.../MQL4/Include`），再使用 MetaEditor 编译 `StrategySelector.mq4` 后才能正常使用。
+本项目目标是：
 
-## 项目结构
+- 保持主入口和目录结构稳定
+- 将策略体系收敛为两套核心策略
+- 用更少模块实现更清晰、更可维护的交易闭环
+
+核心交易目标（当前版本约束）：
+
+- 品种：`XAUUSD`
+- 周期：`M5`
+- 指标框架：`EMA15/30 + ATR14`
+- 固定手数：`0.01`
+- 同一 `symbol + magic` 最多 `1` 个持仓
+- 日内收益达到 `+$50` 后，当天停止新开仓（次日恢复）
+
+---
+
+## 2. 使用前说明（非常重要）
+
+本仓库不是“直接双击运行”类型工程。请先把对应目录复制到 MT4 数据目录，再编译：
+
+1. 将仓库中的 `MQL4/Experts`、`MQL4/Include` 复制到你的 MT4 数据目录
+2. 在 MetaEditor 中编译 `MQL4/Experts/StrategySelector.mq4`
+3. 编译通过后，将 EA 挂到 XAUUSD M5 图表
+
+---
+
+## 3. 当前目录结构（核心）
 
 ```text
 MQL4/
 ├─ Experts/
-│  └─ StrategySelector.mq4            # EA 入口，参数、调度、下单主流程
+│  └─ StrategySelector.mq4                 # EA 主入口（极简主流程）
 └─ Include/
    ├─ Core/
-   │  ├─ Types.mqh                    # 上下文、运行态、信号等核心数据结构
-   │  ├─ StrategyRegistry.mqh         # 策略注册与优先级选择
-   │  ├─ StateStore.mqh               # 运行状态持久化（EA_State.txt）
-   │  ├─ RiskManager.mqh              # 日内风控与熔断
-   │  ├─ TradeExecutor.mqh            # 下单、平仓、保护逻辑
-   │  ├─ MarketState.mqh              # 市场状态识别（regime）
-   │  └─ StateStabilizer.mqh          # 状态去抖与稳定
+   │  ├─ Types.mqh                         # 核心类型（上下文/状态/信号）
+   │  ├─ SessionClock.mqh                  # 日键/时间工具
+   │  ├─ SignalEngine.mqh                  # EMA15/30 + ATR14 指标快照
+   │  ├─ MarketState.mqh                   # 市场过滤（趋势有效/低波动）
+   │  ├─ RiskManager.mqh                   # 日内收益锁定与跨日重置
+   │  ├─ TradeExecutor.mqh                 # 下单/平仓/动态保护执行
+   │  ├─ StrategyBase.mqh                  # 策略统一接口
+   │  ├─ StrategyRegistry.mqh              # 双策略调度（Pullback 优先）
+   │  └─ StateStore.mqh                    # 运行状态持久化
    └─ Strategies/
-      ├─ StrategyLinearTrend.mqh
-      ├─ StrategyBreakout.mqh
-      ├─ StrategyReversal.mqh
-      ├─ StrategyRangeEdgeReversion.mqh
-      ├─ StrategyWickRejection.mqh
-      ├─ StrategySpikeMomentum.mqh
-      └─ StrategySlopeChannel.mqh
+      ├─ StrategyPullback.mqh              # 回踩策略
+      └─ StrategyTrendContinuation.mqh     # 趋势延续策略
 ```
 
-## 主流程（每个 tick）
+说明：
 
-1. 读取并填充 `StrategyContext`
-2. 更新日内统计与风控状态
-3. 识别/稳定市场状态（`regime`）
-4. 策略注册器评估全部策略信号并按优先级择优
-5. 通过 `TradeExecutor` 统一执行下单、止损止盈、保护和持久化
+- 旧策略文件已从主路径移除，不再参与编译/调度。
+- 目前策略目录只保留需求策略两套实现。
 
-## 最近重要变更（2026-03）
+---
 
-### 1) SlopeChannel 新增“回踩震荡突破”入场逻辑（重点）
+## 4. 主流程（OnTick）
 
-目的：解决上涨中途急跌时，价格刚到趋势线附近就过早做多、容易止损的问题。
+`StrategySelector.mq4` 当前流程：
 
-当前做多触发流程改为分阶段：
+1. 构建统一上下文（EMA15/30、ATR14、点差、已收盘 bar 时间）
+2. 同步日内风险状态（按服务器日键重置，计算当日已平仓净收益）
+3. 每 tick 执行已有持仓保护（动态止盈止损）
+4. 仅在“新收盘 bar”评估新开仓
+5. 检查日锁定和日内交易上限
+6. 市场过滤（低波动拦截 + 趋势有效判定）
+7. 策略调度：Pullback 优先，其次 TrendContinuation
+8. 成功开仓后更新持久化状态
 
-- `idle`：等待回踩场景出现
-- `pullback`：记录这轮下跌起点（回踩前最高点）和支撑参考位
-- `base`：要求在支撑附近出现“多次下破尝试但收盘未有效跌破”
-- `armed`：当实时价格回升到本轮跌幅的 70% 时触发做多
+---
 
-触发价格公式：
+## 5. 策略说明
+
+### 5.1 趋势延续（TrendContinuation）
+
+方向框架：
+
+- 多头：`EMA15 > EMA30`
+- 空头：`EMA15 < EMA30`
+
+入场要点（镜像规则）：
+
+- 基于已收盘 K 线
+- 突破前两根高/低点达到 ATR 比例阈值
+- K 线实体需达到最小 ATR 比例要求
+
+### 5.2 回踩（Pullback）
+
+入场要点（镜像规则）：
+
+- 价格回踩 `EMA15` 区域（容差按 ATR）
+- 收盘重新回到趋势方向
+- 影线拒绝满足最小比例约束
+
+调度优先级：
+
+- **Pullback > TrendContinuation**
+
+---
+
+## 6. 风险与执行约束
+
+### 6.1 持仓与开仓约束
+
+- 固定手数：`0.01`
+- 同一 `symbol + magic` 仅允许一个持仓
+- 同一已收盘 bar 最多一次新开仓评估
+
+### 6.2 日内锁定
+
+- 当日净收益（仅统计已平仓订单）达到 `+$50` 后
+- `dailyLocked=true`
+- 当天禁止新开仓
+- 下一服务器日自动解除
+
+### 6.3 低波动拦截
+
+使用 ATR 与点差联合判定：
+
+- ATR points 最小阈值
+- ATR/Spread 比值最小阈值
+
+任一不满足则拦截新开仓。
+
+---
+
+## 7. 动态止盈止损（执行层）
+
+执行层采用分阶段保护思路：
+
+1. 先给出初始 SL/TP
+2. 浮盈达到阶段阈值后推进保护
+3. 保护只朝有利方向移动，不允许回退
+4. 修改单时考虑经纪商最小距离与冻结距离
+
+---
+
+## 8. 状态持久化（StateStore）
+
+当前持久化只保留“重启后必须恢复”的关键字段，例如：
+
+- 日键、日锁定、当日已平仓净收益、当日开仓次数
+- 入场 bar 时间、入场价、入场 ATR
+- 动态保护跟踪状态
+
+目标是：
+
+- 保持跨重启风控一致性
+- 避免持久化无关复杂状态
+
+---
+
+## 9. 编译验证（推荐方式）
+
+如果你在 Windows + PowerShell 下，可直接用：
+
+```powershell
+powershell.exe -NoProfile -Command "& 'C:\Program Files (x86)\MetaTrader 4\metaeditor.exe' '/compile:C:\Users\c1985\vsodeproject\mt4ea\MQL4\Experts\StrategySelector.mq4' '/log:C:\Users\c1985\vsodeproject\mt4ea\compile-task.log'"
+```
+
+成功标准：
+
+- `compile-task.log` 末尾出现：
+  - `Result: 0 errors, 0 warnings`
+
+---
+
+## 10. 常见日志说明
+
+日志示例：
 
 ```text
-recoveryLevel = baseAvg + (pullbackHigh - baseAvg) * Channel_Recovery_Trigger_Ratio
+Registry blocked: same closed bar already has an entry
 ```
 
-其中：
+含义：
 
-- `pullbackHigh`：上涨过程中的本轮高点
-- `baseAvg`：本轮“支撑防守”阶段若干根 K 线收盘价均值
-- `Channel_Recovery_Trigger_Ratio`：默认 `0.70`
+- 当前这根已收盘 K 线已经开过单
+- 为避免同 bar 重复开仓，注册器拦截本次信号
+- 这属于保护逻辑触发，不是程序异常
 
-### 2) 新增 SlopeChannel 参数（可在 EA 输入中直接调）
+---
 
-- `Channel_Pullback_MinDrop_USD`：最小回踩幅度
-- `Channel_SupportTestTolerance_USD`：支撑测试容差
-- `Channel_BreakdownCloseTolerance_USD`：有效跌破判定容差（按收盘）
-- `Channel_Base_MinTests`：支撑防守最少测试次数
-- `Channel_Base_MaxBars`：防守统计最大 K 线数
-- `Channel_Recovery_Trigger_Ratio`：回升触发比例（默认 70%）
+## 11. 开发约定
 
-### 3) 状态持久化与风控联动更新
+当前版本采用以下约定：
 
-- `RuntimeState` 增加回踩/筑底/恢复阶段相关字段
-- `StateStore` 支持新字段写入与恢复
-- `RiskManager` 在重置路径中同步清理该策略临时状态
+- 关键逻辑注释统一中文
+- 模块职责尽量单一
+- 先保证编译通过，再做行为验证
 
-### 4) SlopeChannel 已纳入统一策略注册
+---
 
-`StrategyRegistry` 现在会参与评估 `StrategySlopeChannel`，并与其他策略统一进行优先级比较和选信号。
+## 12. 免责声明
 
-## 关键参数分组建议
-
-- 结构识别参数：`Channel_Lookback_Bars`、`Channel_MinSlope`、`Channel_ParallelTolerance`
-- 风险参数：`Channel_SL_USD`、`Channel_TP_USD`、`Channel_MaxTradesPerDay`
-- 回踩突破参数：`Channel_Pullback_MinDrop_USD`、`Channel_Base_MinTests`、`Channel_Recovery_Trigger_Ratio`
-
-建议先固定 SL/TP 与交易时段，再单独回测回踩参数，不要同时大范围改全部输入。
-
-## 编译与验证
-
-1. 使用 MetaEditor 打开 `MQL4/Experts/StrategySelector.mq4`
-2. 编译 EA，确认无错误
-3. 在策略测试器重点验证以下场景：
-- 上涨中急跌但未止跌时，不应提前做多
-- 支撑位多次防守后，价格恢复到 70% 区域才允许做多
-- 跌破支撑被确认后，旧 setup 应被正确重置
-
-## 注意事项
-
-- 本项目当前主要针对 XAUUSD 价格行为特征做参数化，迁移到其他品种需要重标定
-- 回测与实盘点差/滑点差异会影响触发质量，建议在日志中重点观察 `waiting_base` / `waiting_recovery` / `trigger=long` 三类日志
+本项目仅用于策略研究与工程实践，不构成任何投资建议。  
+实盘前请先在模拟盘充分验证，并结合自身风险承受能力审慎使用。

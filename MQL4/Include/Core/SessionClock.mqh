@@ -11,6 +11,25 @@
 class CSessionClock
 {
 public:
+   // 生成“服务器日键”：只保留日期部分（00:00:00）
+   // 用途：
+   // 1) 判断是否跨日
+   // 2) 对日内风控（如+50锁定）做稳定重置
+   datetime GetServerDayKey(datetime serverTime)
+   {
+      if(serverTime <= 0)
+         serverTime = TimeCurrent();
+      return StringToTime(TimeToStr(serverTime, TIME_DATE));
+   }
+
+   // 获取下一日键（dayKey + 1 day）
+   datetime GetNextServerDayKey(datetime dayKey)
+   {
+      if(dayKey <= 0)
+         dayKey = GetServerDayKey(TimeCurrent());
+      return dayKey + 86400;
+   }
+
    datetime GetBeijingTime(int timeZoneOffset)
    {
       return TimeCurrent() + timeZoneOffset * 3600;

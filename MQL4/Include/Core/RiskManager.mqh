@@ -3,118 +3,106 @@
 
 /*
  * 文件作用：
- * - 统一风控：日盈利/日亏损熔断
- * - 日切重置（01:00 北京时间）
- * - 各会话计数器日内重置
+ * - 统一管理“日内风险锁定”逻辑
+ * - 基于服务器日期日键做跨日重置（不依赖固定分钟）
+ * - 从历史已平仓订单计算当日净收益（含 commission/swap）
  */
 
 #include "Types.mqh"
 
 class CRiskManager
 {
+private:
+   // 仅保留日期（00:00:00），作为“服务器日键”
+   datetime BuildServerDayKey(datetime serverTime)
+   {
+      if(serverTime <= 0)
+         serverTime = TimeCurrent();
+      return StringToTime(TimeToStr(serverTime, TIME_DATE));
+   }
+
+   // 统计当日已平仓净收益：OrderProfit + OrderSwap + OrderCommission
+   // 说明：
+   // - 只统计当前 symbol + magic 的历史单
+   // - 只统计“本服务器日键”范围内已平仓订单
+   // - 不计浮动盈亏，避免锁定状态随行情抖动
+   double CalcTodayClosedNetProfit(const StrategyContext &ctx, datetime dayKey)
+   {
+      if(dayKey <= 0)
+         return 0.0;
+
+      datetime nextDayKey = dayKey + 86400;
+      double total = 0.0;
+      int totalHistory = OrdersHistoryTotal();
+
+      for(int i = 0; i < totalHistory; i++)
+      {
+         if(!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY))
+            continue;
+
+         if(OrderSymbol() != ctx.symbol)
+            continue;
+         if(OrderMagicNumber() != ctx.magicNumber)
+            continue;
+
+         datetime closeTime = OrderCloseTime();
+         if(closeTime < dayKey || closeTime >= nextDayKey)
+            continue;
+
+         total += (OrderProfit() + OrderSwap() + OrderCommission());
+      }
+
+      return total;
+   }
+
 public:
+   // 对外保留旧接口名，避免当前主流程改动过大
+   // 作用：更新日状态并判断是否需要阻止新开仓
    bool CheckCircuitBreaker(StrategyContext &ctx, RuntimeState &state)
    {
-      if(state.dailyPriceDelta >= ctx.dailyPriceDeltaTarget)
+      datetime nowServer = TimeCurrent();
+      datetime currentDayKey = BuildServerDayKey(nowServer);
+
+      // 跨日时重置：不依赖固定分钟，第一笔tick即可生效
+      if(state.dayKey != currentDayKey)
       {
-         state.circuitBreakerActive = true;
-         return true;
+         state.dayKey = currentDayKey;
+         state.dailyLocked = false;
+         state.dailyClosedProfit = 0.0;
+         state.tradesToday = 0;
       }
 
-      if(state.dailyProfit >= ctx.profitThresholdUsd)
-      {
-         state.circuitBreakerActive = true;
-         return true;
-      }
+      // 每个tick按历史已平仓单回算，保证重启后状态一致
+      state.dailyClosedProfit = CalcTodayClosedNetProfit(ctx, state.dayKey);
 
-      double lossThreshold = AccountBalance() * ctx.lossThresholdPercent / 100.0;
-      if(state.dailyLoss >= lossThreshold)
-      {
-         state.circuitBreakerActive = true;
-         return true;
-      }
+      // 达到日收益目标即锁定：当天禁止新开仓
+      if(state.dailyClosedProfit >= 50.0)
+         state.dailyLocked = true;
 
-      return false;
+      return state.dailyLocked;
    }
 
-   datetime DateOnly(datetime t)
+   // 兼容旧调用：保留函数，但语义改为“日键变化即重置”
+   bool NeedDailyReset(datetime serverTime, RuntimeState &state)
    {
-      return StringToTime(TimeToStr(t, TIME_DATE));
+      datetime currentDayKey = BuildServerDayKey(serverTime);
+      return (state.dayKey != currentDayKey);
    }
 
-   bool NeedDailyReset(datetime bjTime, RuntimeState &state)
+   // 兼容旧调用：仅重置 task2 允许的最小字段
+   void DoDailyReset(datetime serverTime, RuntimeState &state)
    {
-      int h = TimeHour(bjTime);
-      int m = TimeMinute(bjTime);
-      if(h != 1 || m != 0)
-         return false;
-
-      datetime currentDate = DateOnly(bjTime);
-      return state.lastResetDate != currentDate;
+      state.dayKey = BuildServerDayKey(serverTime);
+      state.dailyLocked = false;
+      state.dailyClosedProfit = 0.0;
+      state.tradesToday = 0;
    }
 
-   void DoDailyReset(datetime bjTime, RuntimeState &state)
+   // 兼容旧调用：内部复用同一日键重置逻辑
+   void ResetDailyCounters(datetime serverTime, RuntimeState &state)
    {
-      datetime currentDate = DateOnly(bjTime);
-      state.dailyProfit = 0.0;
-      state.dailyLoss = 0.0;
-      state.dailyPriceDelta = 0.0;
-      state.circuitBreakerActive = false;
-      state.rangeHigh = 0.0;
-      state.rangeLow = 0.0;
-      state.breakoutLevel = 0.0;
-      state.breakoutDirection = 0;
-      state.breakoutRetestActive = false;
-      state.asianHigh = 0.0;
-      state.asianLow = 0.0;
-      state.euroBreakoutState = 0;
-      state.lastResetDate = currentDate;
-      state.dayExtremeDate = currentDate;
-      state.dayHigh = 0.0;
-      state.dayLow = 0.0;
-      state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
-      state.channelSetupTime = 0;
-      state.channelPullbackHigh = 0.0;
-      state.channelSupportLevel = 0.0;
-      state.channelFailedBreakdownCount = 0;
-      state.channelBaseBarCount = 0;
-      state.channelBaseCloseAverage = 0.0;
-      state.channelRecoveryLevel = 0.0;
-      state.channelLastBaseBarTime = 0;
-   }
-
-   void ResetDailyCounters(datetime bjTime, RuntimeState &state)
-   {
-      datetime currentDate = DateOnly(bjTime);
-      if(state.countersResetDate == currentDate)
-         return;
-
-      state.session1Trades = 0;
-      state.session3Trades = 0;
-      state.session2Traded = false;
-      state.session5Trades = 0;
-      state.channelTrades = 0;
-      state.fakeBreakoutLow = 0.0;
-      state.fakeBreakoutHigh = 0.0;
-      state.dayExtremeDate = currentDate;
-      state.dayHigh = 0.0;
-      state.dayLow = 0.0;
-      state.rangeHigh = 0.0;
-      state.rangeLow = 0.0;
-      state.breakoutLevel = 0.0;
-      state.breakoutDirection = 0;
-      state.breakoutRetestActive = false;
-      state.asianRangeDate = 0;
-      state.channelPullbackStage = PULLBACK_BASE_STAGE_IDLE;
-      state.channelSetupTime = 0;
-      state.channelPullbackHigh = 0.0;
-      state.channelSupportLevel = 0.0;
-      state.channelFailedBreakdownCount = 0;
-      state.channelBaseBarCount = 0;
-      state.channelBaseCloseAverage = 0.0;
-      state.channelRecoveryLevel = 0.0;
-      state.channelLastBaseBarTime = 0;
-      state.countersResetDate = currentDate;
+      if(NeedDailyReset(serverTime, state))
+         DoDailyReset(serverTime, state);
    }
 };
 

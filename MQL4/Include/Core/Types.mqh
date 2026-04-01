@@ -77,12 +77,23 @@ struct RuntimeState
    bool     trailingActive;          // 追踪止损是否已激活
 };
 
+// 市场过滤结果：仅服务于两策略内核
+struct MarketFilterResult
+{
+   TrendDirection trendDirection; // 趋势方向：上/下/无
+   bool           isTrendValid;   // 趋势是否有效（EMA排列+斜率）
+   bool           isLowVol;       // 是否低波动（ATR/点差过滤失败）
+   datetime       barTime;        // 参与决策的已收盘K线时间（M5）
+   string         blockReason;    // 当次被拦截原因（日志直接可读）
+};
+
 // 交易信号：策略评估后的统一下单意图
 struct TradeSignal
 {
    bool       valid;          // 信号是否有效
    StrategyId strategyId;     // 来源策略
    int        orderType;      // OP_BUY / OP_SELL
+   int        priority;       // 策略优先级（值越大越优先）
    double     lots;           // 手数（固定为0.01）
    double     stopLoss;       // 止损价
    double     takeProfit;     // 止盈价

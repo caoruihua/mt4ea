@@ -27,7 +27,6 @@ void ResetSignal(TradeSignal &signal)
    signal.takeProfit = 0.0;
    signal.comment = "";
    signal.reason = "";
-   signal.priority = 0;
 }
 
 #endif
