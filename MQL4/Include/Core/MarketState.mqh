@@ -56,11 +56,11 @@ public:
          return true;
       }
 
-      // 趋势判定（EMA9/21）：
-      // - 多头：EMA9 > EMA21 且两者相对3根已收盘K线前都在上行
-      // - 空头：EMA9 < EMA21 且两者相对3根已收盘K线前都在下行
-      double ema9Prev3 = iMA(ctx.symbol, PERIOD_M5, 9, 0, MODE_EMA, PRICE_CLOSE, 3);
-      double ema21Prev3 = iMA(ctx.symbol, PERIOD_M5, 21, 0, MODE_EMA, PRICE_CLOSE, 3);
+      // 趋势判定（快/慢 EMA，默认 9/21）：
+      // - 多头：快 EMA > 慢 EMA 且两者相对3根已收盘K线前都在上行
+      // - 空头：快 EMA < 慢 EMA 且两者相对3根已收盘K线前都在下行
+      double ema9Prev3 = iMA(ctx.symbol, PERIOD_M5, ctx.emaFastPeriod, 0, MODE_EMA, PRICE_CLOSE, 3);
+      double ema21Prev3 = iMA(ctx.symbol, PERIOD_M5, ctx.emaSlowPeriod, 0, MODE_EMA, PRICE_CLOSE, 3);
 
       bool upTrend = (ctx.ema9 > ctx.ema21 && ctx.ema9 > ema9Prev3 && ctx.ema21 > ema21Prev3);
       bool downTrend = (ctx.ema9 < ctx.ema21 && ctx.ema9 < ema9Prev3 && ctx.ema21 < ema21Prev3);

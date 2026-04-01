@@ -4,7 +4,7 @@
 /*
  * 文件作用：
  * - 统一提供两策略内核需要的最小指标输入
- * - 只保留 EMA9 / EMA21 / ATR14 / 点差 / 已收盘K线时间
+    * - 只保留快/慢 EMA、ATR14、点差、已收盘K线时间
  *
  * 说明：
  * - 指标统一基于 M5 和已收盘K线（默认 shift=1）
@@ -33,10 +33,10 @@ public:
    }
 
    // 读取两策略内核的最小指标快照（基于已收盘K线）
-   bool BuildCoreSnapshot(double &ema9, double &ema21, double &atr14, double &spreadPoints, datetime &barTime)
+   bool BuildCoreSnapshot(double &ema9, double &ema21, double &atr14, double &spreadPoints, datetime &barTime, int emaFastPeriod, int emaSlowPeriod)
    {
-      ema9 = GetEMA(9, 1);
-      ema21 = GetEMA(21, 1);
+      ema9 = GetEMA(emaFastPeriod, 1);
+      ema21 = GetEMA(emaSlowPeriod, 1);
       atr14 = GetATR(1);
       spreadPoints = (Ask - Bid) / Point;
       barTime = iTime(Symbol(), PERIOD_M5, 1);

@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property strict
 #property version   "2.0"
-#property description "XAUUSD minimal two-strategy kernel (EMA15/30 + ATR14)"
+#property description "XAUUSD minimal two-strategy kernel (configurable EMA + ATR14)"
 
 #include "../Include/Core/Types.mqh"
 #include "../Include/Core/Logger.mqh"
@@ -21,6 +21,8 @@ input int      MagicNumber            = 20260313; // 订单魔术号
 input int      LogLevel               = 1;        // 日志等级
 input int      MaxTradesPerDay        = 8;        // 日内最多开仓次数（上限）
 input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后锁定
+input int      EMAFastPeriod          = 9;        // 快 EMA 周期
+input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
 input int      Slippage               = 30;       // 下单滑点
 input int      MaxRetries             = 3;        // 执行重试次数
 
@@ -46,7 +48,7 @@ bool FillContext()
 {
    double ema9, ema21, atr14, spreadPoints;
    datetime barTime;
-   if(!g_signalEngine.BuildCoreSnapshot(ema9, ema21, atr14, spreadPoints, barTime))
+   if(!g_signalEngine.BuildCoreSnapshot(ema9, ema21, atr14, spreadPoints, barTime, EMAFastPeriod, EMASlowPeriod))
       return false;
 
    g_ctx.symbol = Symbol();
@@ -57,6 +59,8 @@ bool FillContext()
 
    g_ctx.bid = Bid;
    g_ctx.ask = Ask;
+   g_ctx.emaFastPeriod = EMAFastPeriod;
+   g_ctx.emaSlowPeriod = EMASlowPeriod;
    g_ctx.ema9 = ema9;
    g_ctx.ema21 = ema21;
    g_ctx.atr14 = atr14;
@@ -74,6 +78,13 @@ bool FillContext()
 int OnInit()
 {
    g_logger.Init(LogLevel);
+
+   if(EMAFastPeriod <= 0 || EMASlowPeriod <= 0 || EMAFastPeriod >= EMASlowPeriod)
+   {
+      g_logger.Error(StringFormat("Invalid EMA settings: fast=%d slow=%d | require fast>0, slow>0, fast<slow", EMAFastPeriod, EMASlowPeriod));
+      return(INIT_FAILED);
+   }
+
    g_executor.Init(g_logger);
    g_registry.Init(g_logger);
 
@@ -81,7 +92,7 @@ int OnInit()
    g_stateStore.Load(g_state);
 
    g_logger.Info("=== StrategySelector v2.0 initialized ===");
-   g_logger.Info(StringFormat("symbol=%s timeframe=%d magic=%d", Symbol(), PERIOD_M5, MagicNumber));
+   g_logger.Info(StringFormat("symbol=%s timeframe=%d magic=%d emaFast=%d emaSlow=%d", Symbol(), PERIOD_M5, MagicNumber, EMAFastPeriod, EMASlowPeriod));
    return(INIT_SUCCEEDED);
 }
 
@@ -96,7 +107,7 @@ void OnTick()
       return;
 
    // 1) 每tick先同步日风险状态（跨日重置 + 日净收益锁定）
-   bool dailyLocked = g_risk.CheckCircuitBreaker(g_ctx, g_state);
+   bool dailyLocked = g_risk.CheckCircuitBreaker(g_ctx, g_state, DailyProfitStopUsd);
 
    // 2) 每tick都允许持仓保护/平仓检查，不受新开仓锁定影响
    g_executor.ApplyGlobalProfitLockIfNeeded(g_ctx);
@@ -110,7 +121,7 @@ void OnTick()
    g_lastProcessedClosedBar = g_ctx.lastClosedBarTime;
 
    // 4) 锁定或日内上限达到后，禁止新开仓
-   if(dailyLocked || g_state.dailyClosedProfit >= DailyProfitStopUsd)
+   if(dailyLocked)
    {
       g_state.dailyLocked = true;
       g_logger.Info(StringFormat("Entry blocked: daily lock active | closedProfit=%.2f", g_state.dailyClosedProfit));

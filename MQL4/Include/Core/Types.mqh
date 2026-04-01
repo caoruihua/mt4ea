@@ -42,8 +42,10 @@ struct StrategyContext
    double   ask;             // 买价
    
    // ---- 指标快照（取上一根已收盘K线） ----
-   double   ema9;            // EMA(9) 用于趋势判断
-   double   ema21;           // EMA(21) 用于趋势判断
+   int      emaFastPeriod;   // 快 EMA 周期（默认 9）
+   int      emaSlowPeriod;   // 慢 EMA 周期（默认 21）
+   double   ema9;            // 当前快 EMA 值，用于趋势判断
+   double   ema21;           // 当前慢 EMA 值，用于趋势判断
    double   atr14;           // ATR(14) 用于波动率过滤和止损止盈计算
    double   spreadPoints;    // 当前点差（点数）
    
@@ -62,7 +64,7 @@ struct RuntimeState
 {
    // ---- 日内统计 / 风控状态 ----
    datetime dayKey;              // 服务器日键（用于日重置判断，基于TimeCurrent()日期）
-   bool     dailyLocked;         // 日盈利锁定标志（当日累计净盈利达到+$50后锁定）
+   bool     dailyLocked;         // 日盈利锁定标志（当日累计净盈利达到配置阈值后锁定）
    double   dailyClosedProfit;   // 当日累计已平仓净盈利（美元）
    int      tradesToday;         // 当日已开仓次数
    
