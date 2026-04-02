@@ -24,7 +24,7 @@ input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后
 input int      EMAFastPeriod          = 9;        // 快 EMA 周期
 input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
 input int      Slippage               = 30;       // 下单滑点
-input int      MaxRetries             = 3;        // 执行重试次数
+input int      MaxRetries             = 6;        // 执行重试次数
 
 const double   FIXED_LOTS             = 0.01;
 
@@ -93,6 +93,9 @@ int OnInit()
 
    g_logger.Info("=== StrategySelector v2.0 initialized ===");
    g_logger.Info(StringFormat("symbol=%s timeframe=%d magic=%d emaFast=%d emaSlow=%d", Symbol(), PERIOD_M5, MagicNumber, EMAFastPeriod, EMASlowPeriod));
+   int strategyCount = g_registry.GetRegisteredStrategyCount();
+   for(int i = 0; i < strategyCount; i++)
+      g_logger.Info(StringFormat("strategy[%d]=%s", i, g_registry.GetStrategySummaryByIndex(i)));
    return(INIT_SUCCEEDED);
 }
 
@@ -139,18 +142,18 @@ void OnTick()
    if(existingTicket >= 0)
       return;
 
-   // 6) 市场过滤（趋势/低波动）
+   // 6) 市场过滤（低波动全局阻断；趋势有效性由各策略自行判断）
    MarketFilterResult filter;
    if(!g_marketState.EvaluateFilter(g_ctx, filter))
       return;
-   if(filter.isLowVol || !filter.isTrendValid)
+   if(filter.isLowVol)
    {
       if(StringLen(filter.blockReason) > 0)
          g_logger.Info(filter.blockReason);
       return;
    }
 
-   // 7) 两策略调度（Pullback 优先）
+   // 7) 三策略调度（ExpansionFollow -> Pullback -> TrendContinuation）
    TradeSignal best;
    if(!g_registry.EvaluateBestSignal(g_ctx, g_state, best) || !best.valid)
       return;

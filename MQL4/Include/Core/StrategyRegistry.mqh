@@ -3,13 +3,14 @@
 
 /*
  * 文件作用：
- * - 两策略极简调度器
- * - 固定调度顺序：Pullback -> TrendContinuation
+ * - 三策略调度器
+ * - 固定调度顺序：ExpansionFollow -> Pullback -> TrendContinuation
  * - 同一根已收盘K线最多只返回一个可执行信号
  */
 
 #include "StrategyBase.mqh"
 #include "Logger.mqh"
+#include "../Strategies/StrategyExpansionFollow.mqh"
 #include "../Strategies/StrategyPullback.mqh"
 #include "../Strategies/StrategyTrendContinuation.mqh"
 
@@ -21,22 +22,24 @@ private:
 public:
    void Init(CLogger &logger) { m_logger = &logger; }
 
-   int GetRegisteredStrategyCount() { return 2; }
+   int GetRegisteredStrategyCount() { return 3; }
 
    string GetStrategySummaryByIndex(int index)
    {
       switch(index)
       {
-         case 0: return "Pullback | id=STRATEGY_PULLBACK | priority=first";
-         case 1: return "TrendContinuation | id=STRATEGY_TREND_CONTINUATION | priority=second";
+         case 0: return "ExpansionFollow | id=STRATEGY_EXPANSION_FOLLOW | priority=first";
+         case 1: return "Pullback | id=STRATEGY_PULLBACK | priority=second";
+         case 2: return "TrendContinuation | id=STRATEGY_TREND_CONTINUATION | priority=third";
       }
       return "UnknownStrategy";
    }
 
    // 中文说明：
-   // 1) 先评估 Pullback（更保守、质量优先）
-   // 2) Pullback 无信号时，再评估 TrendContinuation
-   // 3) 同一根已收盘K线只返回一个信号
+   // 1) 先评估 ExpansionFollow（爆发行情优先）
+   // 2) ExpansionFollow 无信号时，再评估 Pullback
+   // 3) Pullback 无信号时，再评估 TrendContinuation
+   // 4) 同一根已收盘K线只返回一个信号
    bool EvaluateBestSignal(StrategyContext &ctx, RuntimeState &state, TradeSignal &best)
    {
       ResetSignal(best);
@@ -46,6 +49,17 @@ public:
          if(m_logger != NULL)
             m_logger.Info("Registry blocked: same closed bar already has an entry");
          return false;
+      }
+
+      CStrategyExpansionFollow expansion;
+      TradeSignal expansionSignal;
+      ResetSignal(expansionSignal);
+      if(expansion.GenerateSignal(ctx, state, expansionSignal) && expansionSignal.valid)
+      {
+         best = expansionSignal;
+         if(m_logger != NULL)
+            m_logger.Info(StringFormat("Registry selected: %s", expansionSignal.comment));
+         return true;
       }
 
       CStrategyPullback pullback;

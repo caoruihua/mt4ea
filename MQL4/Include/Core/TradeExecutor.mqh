@@ -72,19 +72,19 @@ public:
       for(int retry = 0; retry < ctx.maxRetries; retry++)
       {
          ResetLastError();
-         int ticket = OrderSend(
-            ctx.symbol,
-            signal.orderType,
-            lots,
-            price,
-            ctx.slippage,
-            signal.stopLoss,
-            signal.takeProfit,
-            signal.comment,
-            ctx.magicNumber,
-            0,
-            clrNONE
-         );
+          int ticket = OrderSend(
+             ctx.symbol,
+             signal.orderType,
+             lots,
+             price,
+             ctx.slippage,
+             signal.stopLoss,
+             signal.takeProfit,
+             signal.comment,
+             ctx.magicNumber,
+             0,
+             clrNONE
+          );
 
          if(ticket > 0)
          {
@@ -100,6 +100,7 @@ public:
          if(retry < ctx.maxRetries - 1)
          {
             Sleep(800);
+            RefreshRates();
             price = (signal.orderType == OP_BUY) ? Ask : Bid;
          }
       }

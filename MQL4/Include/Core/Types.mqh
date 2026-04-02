@@ -24,7 +24,8 @@ enum StrategyId
 {
    STRATEGY_NONE = 0,          // 无策略/占位
    STRATEGY_TREND_CONTINUATION, // 趋势延续策略
-   STRATEGY_PULLBACK           // 回踩策略
+   STRATEGY_PULLBACK,          // 回踩策略
+   STRATEGY_EXPANSION_FOLLOW   // 极端放量单边跟随策略
 };
 
 // 策略上下文：当前 tick 的“输入快照”
