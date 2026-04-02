@@ -41,8 +41,11 @@ CStrategyRegistry  g_registry;
 StrategyContext    g_ctx;
 RuntimeState       g_state;
 
-// 记录“上一根已处理收盘bar时间”，保证新开仓只在新bar评估
+// 记录"上一根已处理收盘bar时间"，保证新开仓只在新bar评估
 datetime           g_lastProcessedClosedBar = 0;
+
+// 心跳日志：记录上一次打印心跳的分钟时间（按本地时间），用于每分钟打印一次心跳
+datetime           g_lastHeartbeatMinute = 0;
 
 bool FillContext()
 {
@@ -73,6 +76,37 @@ bool FillContext()
    g_ctx.currentTime = TimeCurrent();
    g_ctx.lastClosedBarTime = barTime;
    return true;
+}
+
+// 打印心跳日志：每分钟最多打印一次，包含详版运行状态
+void PrintHeartbeat()
+{
+   datetime now = TimeLocal();
+   // 取当前时间的分钟部分（去掉秒），用于判重
+   datetime currentMinute = now - (now % 60);
+   
+   if(currentMinute == g_lastHeartbeatMinute)
+      return; // 同一分钟内已经打印过
+   
+   g_lastHeartbeatMinute = currentMinute;
+   
+   // 获取持仓信息
+   int ticket = g_executor.GetCurrentPosition(g_ctx);
+   string posInfo = (ticket >= 0) ? StringFormat("持仓票据=%d", ticket) : "无持仓";
+   
+   // 打印详版心跳日志
+   g_logger.Info(StringFormat(
+      "[心跳] 品种=%s 时间=%s 点差=%.1f EMA9=%.2f EMA21=%.2f ATR14=%.2f 今日交易=%d 日锁定=%s %s",
+      g_ctx.symbol,
+      TimeToStr(now, TIME_DATE|TIME_SECONDS),
+      g_ctx.spreadPoints,
+      g_ctx.emaFast,
+      g_ctx.emaSlow,
+      g_ctx.atr14,
+      g_state.tradesToday,
+      g_state.dailyLocked ? "是" : "否",
+      posInfo
+   ));
 }
 
 int OnInit()
@@ -108,6 +142,9 @@ void OnTick()
 {
    if(!FillContext())
       return;
+   
+   // 心跳日志：每分钟打印一次详版运行状态
+   PrintHeartbeat();
 
    // 1) 每tick先同步日风险状态（跨日重置 + 日净收益锁定）
    bool dailyLocked = g_risk.CheckCircuitBreaker(g_ctx, g_state, DailyProfitStopUsd);
