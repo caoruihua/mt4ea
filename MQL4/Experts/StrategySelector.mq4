@@ -19,7 +19,7 @@
 // ======================== 最小参数面板（中文说明） ========================
 input int      MagicNumber            = 20260313; // 订单魔术号
 input int      LogLevel               = 1;        // 日志等级
-input int      MaxTradesPerDay        = 8;        // 日内最多开仓次数（上限）
+input int      MaxTradesPerDay        = 30;       // 日内最多开仓次数（上限）
 input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后锁定
 input int      EMAFastPeriod          = 9;        // 快 EMA 周期
 input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
