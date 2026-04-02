@@ -46,10 +46,10 @@ public:
       double atrSpreadRatio = (spreadPoints > 0.0) ? (atrPoints / spreadPoints) : 9999.0;
 
       // 低波动门控：
-      // 1) ATR(14) >= 300 points
-      // 2) ATR points / spread points >= 3.0
+      // 1) ATR(14) >= LowVolAtrPointsFloor
+      // 2) ATR points / spread points >= LowVolAtrSpreadRatioFloor
       // 任一条件不满足，禁止新开仓（但不影响已有持仓管理）
-      if(atrPoints < 300.0 || atrSpreadRatio < 3.0)
+      if(atrPoints < ctx.lowVolAtrPointsFloor || atrSpreadRatio < ctx.lowVolAtrSpreadRatioFloor)
       {
          out.isLowVol = true;
          out.blockReason = StringFormat("blocked: low volatility | atrPts=%.2f spreadPts=%.2f ratio=%.2f", atrPoints, spreadPoints, atrSpreadRatio);
