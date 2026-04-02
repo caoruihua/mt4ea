@@ -3,3 +3,9 @@ openspec/
 .clinerules/workflows/
 .codex/skills/
 .sisyphus/
+
+# 编译生成的文件
+*.ex4
+
+# 日志文件
+*.log
