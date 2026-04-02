@@ -1,10 +1,12 @@
-# MT4EA StrategySelector（极简双策略版）
+# sanqing-ea（MT4 StrategySelector 极简双策略版）
 
 > 一个基于 MT4（MQL4）的现货黄金（XAUUSD）自动交易项目。  
 > 当前版本已从“多策略复杂架构”重构为**双策略极简内核**，仅保留：
 >
 > - **趋势延续策略（TrendContinuation）**
 > - **回踩策略（Pullback）**
+
+项目名说明：`sanqing-ea` 取自中国道教“三清”之意，强调系统设计中的清晰、稳定与秩序。
 
 ---
 
@@ -167,7 +169,7 @@ MQL4/
 如果你在 Windows + PowerShell 下，可直接用：
 
 ```powershell
-powershell.exe -NoProfile -Command "& 'C:\Program Files (x86)\MetaTrader 4\metaeditor.exe' '/compile:C:\Users\c1985\vsodeproject\mt4ea\MQL4\Experts\StrategySelector.mq4' '/log:C:\Users\c1985\vsodeproject\mt4ea\compile-task.log'"
+powershell.exe -NoProfile -Command "& 'C:\Program Files (x86)\MetaTrader 4\metaeditor.exe' '/compile:C:\Users\c1985\vsodeproject\sanqing-ea\MQL4\Experts\StrategySelector.mq4' '/log:C:\Users\c1985\vsodeproject\sanqing-ea\compile-task.log'"
 ```
 
 成功标准：
