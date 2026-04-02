@@ -17,7 +17,7 @@ private:
       double atrPoints = (Point > 0.0) ? (ctx.atr14 / Point) : 0.0;
       double spreadPoints = MathMax(ctx.spreadPoints, 0.0);
       double ratio = (spreadPoints > 0.0) ? (atrPoints / spreadPoints) : 9999.0;
-      return (atrPoints < 120.0 || ratio < 3.0);
+      return (atrPoints < 300.0 || ratio < 3.0);
    }
 
    // 计算近期N根K线的通道高低点
