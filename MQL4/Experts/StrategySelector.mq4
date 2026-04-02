@@ -23,6 +23,8 @@ input int      MaxTradesPerDay        = 30;       // 日内最多开仓次数（
 input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后锁定
 input int      EMAFastPeriod          = 9;        // 快 EMA 周期
 input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
+input double   LowVolAtrPointsFloor   = 300.0;    // 低波动门控：ATR(14)换算为points后的最小阈值
+input double   LowVolAtrSpreadRatioFloor = 3.0;   // 低波动门控：ATR(points)/Spread(points)最小比值
 input int      Slippage               = 30;       // 下单滑点
 input int      MaxRetries             = 6;        // 执行重试次数
 
@@ -68,6 +70,8 @@ bool FillContext()
    g_ctx.emaSlow = emaSlow;
    g_ctx.atr14 = atr14;
    g_ctx.spreadPoints = spreadPoints;
+   g_ctx.lowVolAtrPointsFloor = LowVolAtrPointsFloor;
+   g_ctx.lowVolAtrSpreadRatioFloor = LowVolAtrSpreadRatioFloor;
 
    g_ctx.fixedLots = FIXED_LOTS;
    g_ctx.slippage = Slippage;

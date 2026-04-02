@@ -49,7 +49,9 @@ struct StrategyContext
    double   emaSlow;         // 当前慢 EMA 值，用于趋势判断
    double   atr14;           // ATR(14) 用于波动率过滤和止损止盈计算
    double   spreadPoints;    // 当前点差（点数）
-   
+   double   lowVolAtrPointsFloor;      // 低波动门控：ATR(14)换算为points后的最小阈值
+   double   lowVolAtrSpreadRatioFloor; // 低波动门控：ATR(points)/Spread(points)最小比值
+
    // ---- 全局风控与执行参数 ----
    double   fixedLots;       // 固定手数（固定为0.01）
    int      slippage;        // 允许滑点
