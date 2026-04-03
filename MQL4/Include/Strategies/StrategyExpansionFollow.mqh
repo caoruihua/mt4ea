@@ -78,16 +78,14 @@ public:
       double bodyMed20,
       double prevBodyMax,
       double volRatio,
-      double bodyRangeRatio,
-      double rangeAtrRatio)
+      double bodyRangeRatio)
    {
       if(atr <= 0 || bodyMed20 <= 0 || prevBodyMax <= 0) return false;
-      if(body / atr < 1.25) return false;
+      if(body / atr < 4.0) return false;
       if(body / bodyMed20 < 2.20) return false;
       if(body / prevBodyMax < 1.80) return false;
       if(volRatio < 1.90) return false;
       if(bodyRangeRatio < 0.65) return false;
-      if(rangeAtrRatio > 3.20) return false;
       return true;
    }
 
@@ -140,9 +138,8 @@ public:
       }
 
       double bodyRangeRatio = body1 / range1;
-      double rangeAtrRatio = range1 / atr;
 
-      bool commonOk = EvaluateExpansionGate(body1, atr, bodyMed20, prevBodyMax, volRatio, bodyRangeRatio, rangeAtrRatio);
+      bool commonOk = EvaluateExpansionGate(body1, atr, bodyMed20, prevBodyMax, volRatio, bodyRangeRatio);
       if(!commonOk)
       {
          signal.reason = "blocked: expansion gate not met";
