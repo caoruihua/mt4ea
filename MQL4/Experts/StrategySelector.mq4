@@ -21,14 +21,13 @@ input int      MagicNumber            = 20260313; // 订单魔术号
 input int      LogLevel               = 1;        // 日志等级
 input int      MaxTradesPerDay        = 30;       // 日内最多开仓次数（上限）
 input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后锁定
+input double   FixedLots              = 0.01;     // 统一固定手数
 input int      EMAFastPeriod          = 9;        // 快 EMA 周期
 input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
 input double   LowVolAtrPointsFloor   = 300.0;    // 低波动门控：ATR(14)换算为points后的最小阈值
 input double   LowVolAtrSpreadRatioFloor = 3.0;   // 低波动门控：ATR(points)/Spread(points)最小比值
 input int      Slippage               = 30;       // 下单滑点
 input int      MaxRetries             = 6;        // 执行重试次数
-
-const double   FIXED_LOTS             = 0.01;
 
 // ======================== 全局对象 ========================
 CLogger            g_logger;
@@ -73,7 +72,7 @@ bool FillContext()
    g_ctx.lowVolAtrPointsFloor = LowVolAtrPointsFloor;
    g_ctx.lowVolAtrSpreadRatioFloor = LowVolAtrSpreadRatioFloor;
 
-   g_ctx.fixedLots = FIXED_LOTS;
+   g_ctx.fixedLots = FixedLots;
    g_ctx.slippage = Slippage;
    g_ctx.maxRetries = MaxRetries;
 
@@ -116,6 +115,12 @@ void PrintHeartbeat()
 int OnInit()
 {
    g_logger.Init(LogLevel);
+
+   if(FixedLots <= 0.0)
+   {
+      g_logger.Error(StringFormat("Invalid fixed lots: %.2f | require > 0", FixedLots));
+      return(INIT_FAILED);
+   }
 
    if(EMAFastPeriod <= 0 || EMASlowPeriod <= 0 || EMAFastPeriod >= EMASlowPeriod)
    {

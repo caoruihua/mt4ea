@@ -53,7 +53,7 @@ struct StrategyContext
    double   lowVolAtrSpreadRatioFloor; // 低波动门控：ATR(points)/Spread(points)最小比值
 
    // ---- 全局风控与执行参数 ----
-   double   fixedLots;       // 固定手数（固定为0.01）
+   double   fixedLots;       // 当前统一配置的下单手数
    int      slippage;        // 允许滑点
    int      maxRetries;      // 下单重试次数
    
@@ -99,7 +99,7 @@ struct TradeSignal
    StrategyId strategyId;     // 来源策略
    int        orderType;      // OP_BUY / OP_SELL
    int        priority;       // 策略优先级（值越大越优先）
-   double     lots;           // 手数（固定为0.01）
+   double     lots;           // 传递给执行层的目标手数
    double     stopLoss;       // 止损价
    double     takeProfit;     // 止盈价
    string     comment;        // 订单注释

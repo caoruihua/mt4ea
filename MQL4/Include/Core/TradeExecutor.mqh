@@ -66,7 +66,9 @@ public:
    int OpenOrder(const StrategyContext &ctx, const TradeSignal &signal)
    {
       // 中文说明：硬性约束固定 0.01 手，不接受外部放大
-      double lots = 0.01;
+      double lots = (signal.lots > 0.0) ? signal.lots : ctx.fixedLots;
+      if(lots <= 0.0)
+         return -1;
       double price = (signal.orderType == OP_BUY) ? Ask : Bid;
 
       for(int retry = 0; retry < ctx.maxRetries; retry++)
