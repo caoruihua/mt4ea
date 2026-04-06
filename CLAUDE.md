@@ -1,132 +1,132 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文档为 Claude Code (claude.ai/code) 在本项目中工作提供指导。
 
-## Project Overview
+## 项目概述
 
-This is an MQL4 (MetaTrader 4) Expert Advisor project for automated XAUUSD (gold) trading on the M5 timeframe. It uses a minimal dual-strategy kernel:
+这是一个 MQL4（MetaTrader 4）智能交易系统项目，用于在 M5 时间框架下自动交易 XAUUSD（黄金）。采用最小化双策略核心架构：
 
-- **TrendContinuation**: Follows trend breakouts based on EMA alignment
-- **Pullback**: Enters on price retracements to the fast EMA with rejection patterns
-- **ExpansionFollow**: Enters on high-momentum breakout candles (burst candles)
+- **TrendContinuation（趋势延续）**：基于 EMA 排列的趋势突破
+- **Pullback（回撤）**：价格回撤至快速 EMA 并形成反转形态时入场
+- **ExpansionFollow（扩张跟随）**：高动量突破蜡烛图（爆发蜡烛）入场
 
-## Build/Compile Commands
+## 构建/编译命令
 
-### Compiling the EA
+### 编译 EA
 
-**Via PowerShell (recommended):**
+**通过 PowerShell（推荐）：**
 ```powershell
 powershell.exe -NoProfile -Command "& 'C:\Program Files (x86)\MetaTrader 4\metaeditor.exe' '/compile:C:\Users\c1985\vsodeproject\sanqing-ea\MQL4\Experts\StrategySelector.mq4' '/log:C:\Users\c1985\vsodeproject\sanqing-ea\compile-task.log'"
 ```
 
-**Via VS Code:**
-Use the "编译 MQL4" task configured in `.vscode/tasks.json`
+**通过 VS Code：**
+使用 `.vscode/tasks.json` 中配置的"编译 MQL4"任务
 
-**Success criteria:** Check `compile-task.log` for `Result: 0 errors, 0 warnings`
+**成功标准：** 检查 `compile-task.log` 确认 `Result: 0 errors, 0 warnings`
 
-### Deployment
+### 部署
 
-1. Copy `MQL4/Experts/` and `MQL4/Include/` to your MT4 data directory
-2. Compile `StrategySelector.mq4` in MetaEditor
-3. Attach the EA to an XAUUSD M5 chart
+1. 将 `MQL4/Experts/` 和 `MQL4/Include/` 复制到 MT4 数据目录
+2. 在 MetaEditor 中编译 `StrategySelector.mq4`
+3. 将 EA 挂载到 XAUUSD M5 图表
 
-## Architecture
+## 架构
 
-### Main Entry Point
+### 主入口点
 
-`MQL4/Experts/StrategySelector.mq4` - The EA main file that:
-- Builds a unified context snapshot (EMAs, ATR, spread) each tick
-- Syncs daily risk status (profit lock, trade count)
-- Runs position protection (dynamic SL/TP) every tick
-- Only evaluates new entries on "new closed bar" events
-- Uses `CStrategyRegistry` to select the best signal from registered strategies
+`MQL4/Experts/StrategySelector.mq4` - EA 主文件，具备以下功能：
+- 每tick构建统一上下文快照（EMA、ATR、点差）
+- 同步每日风险状态（盈利锁定、交易次数）
+- 每tick运行仓位保护（动态止损/止盈）
+- 仅在"新收盘K线"事件时评估新入场
+- 使用 `CStrategyRegistry` 从已注册策略中选择最佳信号
 
-### Core Modules (MQL4/Include/Core/)
+### 核心模块（MQL4/Include/Core/）
 
-**Types.mqh** - Central data structures shared across all modules:
-- `StrategyContext`: Current tick snapshot (prices, indicators, config)
-- `RuntimeState`: Persisted state (daily stats, entry tracking, trailing status)
-- `TradeSignal`: Unified signal format from strategies
-- `MarketFilterResult`: Market condition assessment
+**Types.mqh** - 各模块共享的核心数据结构：
+- `StrategyContext`：当前tick快照（价格、指标、配置）
+- `RuntimeState`：持久化状态（每日统计、入场跟踪、追踪状态）
+- `TradeSignal`：策略输出的统一信号格式
+- `MarketFilterResult`：市场条件评估
 
-**StrategyRegistry.mqh** - Strategy dispatcher with fixed priority:
-1. ExpansionFollow (highest priority)
+**StrategyRegistry.mqh** - 固定优先级的策略调度器：
+1. ExpansionFollow（最高优先级）
 2. Pullback
-3. TrendContinuation (lowest priority)
+3. TrendContinuation（最低优先级）
 
-**TradeExecutor.mqh** - Order execution and position management:
-- `OpenOrder()` / `CloseOrder()` with retry logic
-- `CheckStopLossTakeProfit()` - hard SL/TP checks
-- `ApplyGlobalProfitLockIfNeeded()` - two-stage trailing protection:
-  - Stage 1 (1.0×ATR profit): Move SL to breakeven+0.1×ATR, extend TP to 2.5×ATR
-  - Stage 2 (1.5×ATR profit): Activate trailing based on Close[1]
+**TradeExecutor.mqh** - 订单执行与仓位管理：
+- `OpenOrder()` / `CloseOrder()` 带重试逻辑
+- `CheckStopLossTakeProfit()` - 硬性止损/止盈检查
+- `ApplyGlobalProfitLockIfNeeded()` - 两阶段追踪保护：
+  - 第一阶段（1.0×ATR 盈利）：移动止损至盈亏平衡+0.1×ATR，扩展止盈至2.5×ATR
+  - 第二阶段（1.5×ATR 盈利）：基于 Close[1] 激活追踪止损
 
-**RiskManager.mqh** - Daily risk controls:
-- Calculates realized PnL from closed orders
-- Triggers `dailyLocked` when `dailyClosedProfit >= DailyProfitStopUsd`
-- Resets stats on new server day
+**RiskManager.mqh** - 每日风险控制：
+- 计算已平仓订单的已实现盈亏
+- 当 `dailyClosedProfit >= DailyProfitStopUsd` 时触发 `dailyLocked`
+- 新服务器日重置统计
 
-**MarketState.mqh** - Market condition filtering:
-- Low volatility gate: ATR points and ATR/spread ratio checks
-- Trend validity: EMA alignment with slope confirmation
+**MarketState.mqh** - 市场条件过滤：
+- 低波动门控：ATR 点数和 ATR/点差比率检查
+- 趋势有效性：EMA 排列与斜率确认
 
-**StateStore.mqh** - Persistence layer using global variables:
-- Saves/loads `RuntimeState` to survive EA restarts
-- Persists: dayKey, dailyLocked, dailyClosedProfit, tradesToday, entry tracking, trailing state
+**StateStore.mqh** - 使用全局变量的持久化层：
+- 保存/加载 `RuntimeState` 以便 EA 重启后恢复
+- 持久化：dayKey、dailyLocked、dailyClosedProfit、tradesToday、入场跟踪、追踪状态
 
-**SignalEngine.mqh** - Indicator calculations:
-- Builds core snapshot with configurable EMA periods + ATR(14)
+**SignalEngine.mqh** - 指标计算：
+- 构建可配置 EMA 周期 + ATR(14) 的核心快照
 
-**SessionClock.mqh** - Time utilities for server day detection
+**SessionClock.mqh** - 服务器日检测的时间工具
 
-**Logger.mqh** - Leveled logging (Error/Warning/Info/Debug)
+**Logger.mqh** - 分级日志（Error/Warning/Info/Debug）
 
-**StrategyBase.mqh** - Abstract base class `IStrategy` for all strategies
+**StrategyBase.mqh** - 所有策略的抽象基类 `IStrategy`
 
-### Strategy Modules (MQL4/Include/Strategies/)
+### 策略模块（MQL4/Include/Strategies/）
 
-Each strategy implements `IStrategy` with:
-- `Name()`: Returns strategy identifier string
-- `CanTrade()`: Pre-checks (volatility, bar timing)
-- `GenerateSignal()`: Returns `TradeSignal` if conditions met
+每个策略实现 `IStrategy`：
+- `Name()`：返回策略标识符字符串
+- `CanTrade()`：预检查（波动率、K线时机）
+- `GenerateSignal()`：满足条件时返回 `TradeSignal`
 
-**StrategyPullback.mqh:**
-- Long: EMA9 > EMA21, price in lower half of 20-bar channel, pullback to EMA9 with bullish rejection (lower wick >= 50% body)
-- Short: EMA9 < EMA21, price in upper half of 20-bar channel, pullback to EMA9 with bearish rejection (upper wick >= 50% body)
+**StrategyPullback.mqh：**
+- 多头：EMA9 > EMA21，价格处于20根K线通道下半区，回撤至 EMA9 并形成看涨反转（下影线 >= 50% 实体）
+- 空头：EMA9 < EMA21，价格处于20根K线通道上半区，回撤至 EMA9 并形成看跌反转（上影线 >= 50% 实体）
 
-**StrategyTrendContinuation.mqh:**
-- Long: EMA9 > EMA21, Close[1] breaks above max(High[2], High[3]) + 0.20×ATR, body >= 0.35×ATR
-- Short: EMA9 < EMA21, Close[1] breaks below min(Low[2], Low[3]) - 0.20×ATR, body >= 0.35×ATR
+**StrategyTrendContinuation.mqh：**
+- 多头：EMA9 > EMA21，Close[1] 突破 max(High[2], High[3]) + 0.20×ATR，实体 >= 0.35×ATR
+- 空头：EMA9 < EMA21，Close[1] 跌破 min(Low[2], Low[3]) - 0.20×ATR，实体 >= 0.35×ATR
 
-**StrategyExpansionFollow.mqh:**
-- Detects "burst candles" with extreme body size relative to ATR and median body
-- Requires volume confirmation, clean direction (shadow ratio), and breakout beyond 20-bar channel
+**StrategyExpansionFollow.mqh：**
+- 检测相对于 ATR 和中位实体大小的"爆发蜡烛"
+- 需要成交量确认、清晰方向（影线比率）、以及突破20根K线通道
 
-## Key Constraints
+## 关键约束
 
-- **Symbol/Timeframe**: XAUUSD M5 only
-- **Position limit**: One position per `symbol + magic` combination
-- **Trade size**: Fixed 0.01 lots (enforced in executor)
-- **Daily limit**: Max 30 trades per day
-- **Profit lock**: Stop new entries after +$50 daily realized profit
-- **Entry timing**: Only one entry per closed bar
-- **Indicator defaults**: EMA9/EMA21 with ATR(14)
-- **SL/TP defaults**: 1.2×ATR stop, 2.0×ATR target (strategies may override)
+- **品种/时间框架**：仅限 XAUUSD M5
+- **仓位限制**：每个 `symbol + magic` 组合最多一个仓位
+- **交易手数**：固定 0.01 手（在执行器中强制执行）
+- **每日限制**：每天最多 30 笔交易
+- **盈利锁定**：每日已实现盈利达到 +$50 后停止新入场
+- **入场时机**：每根收盘K线仅一次入场
+- **指标默认值**：EMA9/EMA21 配合 ATR(14)
+- **止损/止盈默认值**：1.2×ATR 止损，2.0×ATR 止盈（策略可覆盖）
 
-## Development Notes
+## 开发注意事项
 
-- All comments and log messages are in Chinese
-- Decisions are based on the **previous closed bar** (bar[1]), never the forming bar
-- The EA uses MQL4's legacy order pool API (`OrderSend`, `OrderSelect`, `OrderModify`)
-- State is persisted using MT4 global variables for restart recovery
-- The `docs/mt5-rewrite-requirements.md` file contains detailed specifications for an MT5 port
+- 所有注释和日志消息使用中文
+- 决策基于**上一根收盘K线**（bar[1]），而非正在形成的K线
+- EA 使用 MQL4 传统订单池 API（`OrderSend`、`OrderSelect`、`OrderModify`）
+- 状态使用 MT4 全局变量持久化以实现重启恢复
+- `docs/mt5-rewrite-requirements.md` 文件包含 MT5 移植的详细规范
 
-## Git Workflow
+## Git 工作流
 
-- Commit messages must be written in Chinese
-- Follow the conventional commit format with Chinese descriptions
+- 提交信息必须使用中文
+- 遵循中文描述的常规提交格式
 
-## Testing Workflow
+## 测试工作流
 
-- After project development is complete and all unit tests pass, automatically delete the created unit test cases
-- Do not leave temporary test files in the repository
+- 项目开发完成且所有单元测试通过后，自动删除创建的单元测试用例
+- 不在仓库中留下临时测试文件
