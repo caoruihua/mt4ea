@@ -173,7 +173,7 @@ void OnTick()
    if(dailyLocked)
    {
       g_state.dailyLocked = true;
-      g_logger.Info(StringFormat("Entry blocked: daily lock active | closedProfit=%.2f", g_state.dailyClosedProfit));
+      g_logger.Info(StringFormat("[风控] 日盈利目标已达标，禁止新开仓 | 已平仓=%.2f", g_state.dailyClosedProfit));
       g_stateStore.Save(g_state);
       return;
    }
