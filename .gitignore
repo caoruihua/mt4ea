@@ -9,3 +9,6 @@ openspec/
 
 # 日志文件
 *.log
+
+# OMX 工具
+.omx/
