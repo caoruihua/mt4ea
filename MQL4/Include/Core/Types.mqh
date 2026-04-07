@@ -80,6 +80,9 @@ struct RuntimeState
    double   highestCloseSinceEntry;  // 入场后最高收盘价（用于多头追踪）
    double   lowestCloseSinceEntry;   // 入场后最低收盘价（用于空头追踪）
    bool     trailingActive;          // 追踪止损是否已激活
+   
+   // ---- 服务器平仓检测 ----
+   int      lastTicket;              // 上一tick的持仓订单号（用于检测服务器平仓）
 };
 
 // 市场过滤结果：仅服务于两策略内核

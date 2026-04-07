@@ -164,6 +164,11 @@ void OnTick()
    bool closedByProtection = g_executor.CheckStopLossTakeProfit(g_ctx, g_state);
    if(closedByProtection)
       g_stateStore.Save(g_state);
+   
+   // 2.1) 检测服务器平仓（止损/止盈由经纪商服务器执行的情况）
+   bool closedByServer = g_executor.DetectServerClosedPosition(g_ctx, g_state, g_state.lastTicket);
+   if(closedByServer)
+      g_stateStore.Save(g_state);
 
    // 3) 新开仓仅在“新收盘bar”触发一次
    if(g_lastProcessedClosedBar == g_ctx.lastClosedBarTime)
@@ -186,6 +191,7 @@ void OnTick()
 
    // 5) 已有持仓则不重复开仓（symbol+magic 单持仓）
    int existingTicket = g_executor.GetCurrentPosition(g_ctx);
+   g_state.lastTicket = existingTicket;  // 更新lastTicket用于下一tick检测
    if(existingTicket >= 0)
       return;
 
@@ -214,6 +220,7 @@ void OnTick()
       g_state.trailingActive = false;
       g_state.highestCloseSinceEntry = Close[1];
       g_state.lowestCloseSinceEntry = Close[1];
+      g_state.lastTicket = ticket;  // 记录当前订单号
 
       if(OrderSelect(ticket, SELECT_BY_TICKET))
          g_state.entryPrice = OrderOpenPrice();

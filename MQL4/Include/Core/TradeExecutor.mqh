@@ -294,6 +294,81 @@ public:
    {
       ApplyGlobalProfitLockIfNeeded(ctx);
    }
+
+   // 检测服务器平仓（止损/止盈由经纪商服务器执行的情况）
+   // 返回值：true 表示检测到服务器平仓并记录了日志
+   bool DetectServerClosedPosition(const StrategyContext &ctx, RuntimeState &state, int lastTicket)
+   {
+      if(lastTicket <= 0)
+         return false;
+      
+      // 检查该订单是否仍存在
+      bool stillOpen = false;
+      for(int i = 0; i < OrdersTotal(); i++)
+      {
+         if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES) && OrderTicket() == lastTicket)
+         {
+            stillOpen = true;
+            break;
+         }
+      }
+      
+      // 如果订单已不在持仓列表中，查询历史记录
+      if(!stillOpen)
+      {
+         for(int i = 0; i < OrdersHistoryTotal(); i++)
+         {
+            if(OrderSelect(i, SELECT_BY_POS, MODE_HISTORY) && OrderTicket() == lastTicket)
+            {
+               // 找到历史订单，记录平仓信息
+               double pnl = OrderProfit() + OrderSwap() + OrderCommission();
+               double closePrice = OrderClosePrice();
+               string closeTime = TimeToStr(OrderCloseTime(), TIME_DATE|TIME_SECONDS);
+               
+               // 判断平仓原因
+               string reason = "服务器平仓";
+               double openSl = OrderStopLoss();
+               double openTp = OrderTakeProfit();
+               int orderType = OrderType();
+               
+               // 根据价格判断是止损还是止盈
+               if(orderType == OP_BUY)
+               {
+                  if(openSl > 0 && MathAbs(closePrice - openSl) < Point * 10)
+                     reason = "止损触发(服务器)";
+                  else if(openTp > 0 && MathAbs(closePrice - openTp) < Point * 10)
+                     reason = "止盈触发(服务器)";
+               }
+               else if(orderType == OP_SELL)
+               {
+                  if(openSl > 0 && MathAbs(closePrice - openSl) < Point * 10)
+                     reason = "止损触发(服务器)";
+                  else if(openTp > 0 && MathAbs(closePrice - openTp) < Point * 10)
+                     reason = "止盈触发(服务器)";
+               }
+               
+               // 累计到日盈亏
+               state.dailyClosedProfit += pnl;
+               
+               // 清理动态跟踪状态
+               state.entryPrice = 0.0;
+               state.entryAtr = 0.0;
+               state.highestCloseSinceEntry = 0.0;
+               state.lowestCloseSinceEntry = 0.0;
+               state.trailingActive = false;
+               
+               if(m_logger != NULL)
+               {
+                  m_logger.Info(StringFormat("[服务器平仓] 订单 #%d 盈亏=%.2f 平仓价=%.5f 时间=%s 原因=%s",
+                     lastTicket, pnl, closePrice, closeTime, reason));
+               }
+               return true;
+            }
+         }
+      }
+      
+      return false;
+   }
 };
 
 #endif
