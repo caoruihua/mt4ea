@@ -58,7 +58,7 @@ private:
 public:
    // 对外保留旧接口名，避免当前主流程改动过大
    // 作用：更新日状态并判断是否需要阻止新开仓
-   bool CheckCircuitBreaker(StrategyContext &ctx, RuntimeState &state, double dailyProfitStopUsd)
+   bool CheckCircuitBreaker(StrategyContext &ctx, RuntimeState &state, double dailyProfitStopUsd, double dailyLossStopUsd = 0)
    {
       datetime nowServer = TimeCurrent();
       datetime currentDayKey = BuildServerDayKey(nowServer);
@@ -77,6 +77,10 @@ public:
 
       // 达到日收益目标即锁定：当天禁止新开仓
       if(state.dailyClosedProfit >= dailyProfitStopUsd)
+         state.dailyLocked = true;
+
+      // 达到日亏损阈值即锁定：当天禁止新开仓
+      if(dailyLossStopUsd > 0 && state.dailyClosedProfit <= -dailyLossStopUsd)
          state.dailyLocked = true;
 
       return state.dailyLocked;

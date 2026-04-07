@@ -21,6 +21,7 @@ input int      MagicNumber            = 20260313; // 订单魔术号
 input int      LogLevel               = 1;        // 日志等级
 input int      MaxTradesPerDay        = 30;       // 日内最多开仓次数（上限）
 input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后锁定
+input double   DailyLossStopUsd       = 40.0;     // 日亏损达到该值后锁定
 input double   FixedLots              = 0.01;     // 统一固定手数
 input int      EMAFastPeriod          = 9;        // 快 EMA 周期
 input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
@@ -156,7 +157,7 @@ void OnTick()
    PrintHeartbeat();
 
    // 1) 每tick先同步日风险状态（跨日重置 + 日净收益锁定）
-   bool dailyLocked = g_risk.CheckCircuitBreaker(g_ctx, g_state, DailyProfitStopUsd);
+   bool dailyLocked = g_risk.CheckCircuitBreaker(g_ctx, g_state, DailyProfitStopUsd, DailyLossStopUsd);
 
    // 2) 每tick都允许持仓保护/平仓检查，不受新开仓锁定影响
    g_executor.ApplyGlobalProfitLockIfNeeded(g_ctx);
@@ -173,7 +174,7 @@ void OnTick()
    if(dailyLocked)
    {
       g_state.dailyLocked = true;
-      g_logger.Info(StringFormat("[风控] 日盈利目标已达标，禁止新开仓 | 已平仓=%.2f", g_state.dailyClosedProfit));
+      g_logger.Info(StringFormat("[风控] 日风控触发（盈/亏锁定），禁止新开仓 | 已平仓=%.2f", g_state.dailyClosedProfit));
       g_stateStore.Save(g_state);
       return;
    }
