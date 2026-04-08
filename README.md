@@ -1,211 +1,125 @@
-# sanqing-ea（MT4 StrategySelector 极简双策略版）
+# sanqing-ea
 
-> 一个基于 MT4（MQL4）的现货黄金（XAUUSD）自动交易项目。  
-> 当前版本已从“多策略复杂架构”重构为**双策略极简内核**，仅保留：
->
-> - **趋势延续策略（TrendContinuation）**
-> - **回踩策略（Pullback）**
+一个基于 MT4 / MQL4 的 XAUUSD 自动交易项目，主入口为 `StrategySelector.mq4`。当前版本使用统一上下文、集中参数管理和中央选股式策略调度，核心目标是让趋势延续与回踩两类入场更可控、更容易回测。
 
-项目名说明：`sanqing-ea` 寓意“自己主宰交易的时间与空间”，借中国道教中“三清”这一至高神祇之名，表达对交易系统掌控力与秩序感的追求。
+## 当前结构
 
----
+- `MQL4/Experts/StrategySelector.mq4`
+  EA 主入口，负责参数输入、上下文构建、风控检查、策略调度和下单执行。
+- `MQL4/Include/Core/Types.mqh`
+  共享类型定义，包含 `StrategyContext`、`RuntimeState`、`TradeSignal` 等核心结构。
+- `MQL4/Include/Core/StrategyRegistry.mqh`
+  中央视图层，按既定顺序评估策略并输出最终可执行信号。
+- `MQL4/Include/Strategies/StrategyPullback.mqh`
+  回踩类入场逻辑。
+- `MQL4/Include/Strategies/StrategyTrendContinuation.mqh`
+  趋势延续逻辑，当前已集成第二波防追高/防追空过滤。
 
-## 1. 项目定位
+## 当前策略顺序
 
-本项目目标是：
+按中央注册表顺序评估：
 
-- 保持主入口和目录结构稳定
-- 将策略体系收敛为两套核心策略
-- 用更少模块实现更清晰、更可维护的交易闭环
+1. `ExpansionFollow`
+2. `Pullback`
+3. `TrendContinuation`
+4. `PinbarReversal`
 
-核心交易目标（当前版本约束）：
+一根已收盘 K 线最多只允许一次新开仓决策。
 
-- 品种：`XAUUSD`
-- 周期：`M5`
-- 指标框架：`EMAFastPeriod/EMASlowPeriod`（默认 `9/21`）+ `ATR14`
-- 固定手数：`0.01`
-- 同一 `symbol + magic` 最多 `1` 个持仓
-- 日内收益达到 `+$50` 后，当天停止新开仓（次日恢复）
+## 第二波防追过滤
 
----
+本次更新把第二波 continuation 过滤直接集成到 `TrendContinuation`，用于解决“第一波对了，第二波买在天花板/卖在地板附近，被正常回撤扫掉”的问题。
 
-## 2. 使用前说明（非常重要）
+### 多头过滤
 
-本仓库不是“直接双击运行”类型工程。请先把对应目录复制到 MT4 数据目录，再编译：
+多头 continuation 除了原有 breakout 条件外，还要求：
 
-1. 将仓库中的 `MQL4/Experts`、`MQL4/Include` 复制到你的 MT4 数据目录
-2. 在 MetaEditor 中编译 `MQL4/Experts/StrategySelector.mq4`
-3. 编译通过后，将 EA 挂到 XAUUSD M5 图表
+- 到最近关键阻力至少保留 `1 ATR` 空间
+- 已出现可识别回踩
+- 回踩幅度至少达到 `SecondLegPullbackMinAtr`
+- 回踩后价格至少收回该回踩区间的 `50%`
+- 第二波前出现宽松整理/停顿，而不是直接垂直追高
 
----
+### 空头过滤
 
-## 3. 当前目录结构（核心）
+空头使用镜像规则：
 
-```text
-MQL4/
-├─ Experts/
-│  └─ StrategySelector.mq4                 # EA 主入口（极简主流程）
-└─ Include/
-   ├─ Core/
-   │  ├─ Types.mqh                         # 核心类型（上下文/状态/信号）
-   │  ├─ SessionClock.mqh                  # 日键/时间工具
-   │  ├─ SignalEngine.mqh                  # 可配置快/慢 EMA + ATR14 指标快照
-   │  ├─ MarketState.mqh                   # 市场过滤（趋势有效/低波动）
-   │  ├─ RiskManager.mqh                   # 日内收益锁定与跨日重置
-   │  ├─ TradeExecutor.mqh                 # 下单/平仓/动态保护执行
-   │  ├─ StrategyBase.mqh                  # 策略统一接口
-   │  ├─ StrategyRegistry.mqh              # 双策略调度（Pullback 优先）
-   │  └─ StateStore.mqh                    # 运行状态持久化
-   └─ Strategies/
-      ├─ StrategyPullback.mqh              # 回踩策略
-      └─ StrategyTrendContinuation.mqh     # 趋势延续策略
-```
+- 到最近关键支撑至少保留 `1 ATR` 空间
+- 已出现可识别反抽
+- 反抽幅度至少达到 `SecondLegPullbackMinAtr`
+- 反抽后价格至少回吐该反抽区间的 `50%`
+- 第二波前出现宽松整理/停顿，而不是直接垂直追空
 
-说明：
+### 关键位来源
 
-- 旧策略文件已从主路径移除，不再参与编译/调度。
-- 目前策略目录只保留需求策略两套实现。
+当前实现使用以下近似关键位：
 
----
+- 最近一小时高点 / 低点
+- 当日高点 / 低点
+- 近期 swing 高点 / 低点
 
-## 4. 主流程（OnTick）
+系统会优先取离当前价格最近的有效阻力或支撑进行空间过滤。
 
-`StrategySelector.mq4` 当前流程：
+## 主入口参数
 
-1. 构建统一上下文（快/慢 EMA、ATR14、点差、已收盘 bar 时间）
-2. 同步日内风险状态（按服务器日键重置，计算当日已平仓净收益）
-3. 每 tick 执行已有持仓保护（动态止盈止损）
-4. 仅在“新收盘 bar”评估新开仓
-5. 检查日锁定和日内交易上限
-6. 市场过滤（低波动拦截 + 趋势有效判定）
-7. 策略调度：Pullback 优先，其次 TrendContinuation
-8. 成功开仓后更新持久化状态
+第二波防追过滤参数统一放在主入口文件 `MQL4/Experts/StrategySelector.mq4`，策略文件只读取上下文，不单独暴露外部输入。
 
----
+当前相关参数：
 
-## 5. 策略说明
+- `EnableSecondLegLongFilter`
+- `EnableSecondLegShortFilter`
+- `SecondLegMinSpaceAtr`
+- `SecondLegPullbackMinAtr`
+- `SecondLegMinPullbackBars`
+- `SecondLegBaseMinBars`
+- `SecondLegBaseMaxRangeAtr`
+- `SecondLegReclaimRatio`
 
-### 5.1 趋势延续（TrendContinuation）
+默认值思路：
 
-方向框架：
+- 空间过滤先用 `1 ATR`
+- 回踩/反抽确认先用 `50%` 收回/回吐
+- 结构管理使用宽松版，不要求标准旗形
 
-- 多头：快 EMA > 慢 EMA（默认 `9 > 21`）
-- 空头：快 EMA < 慢 EMA（默认 `9 < 21`）
+## 风控与执行约束
 
-入场要点（镜像规则）：
+- 固定手数由 `FixedLots` 控制
+- 同一 `symbol + magic` 只允许一单持仓
+- 达到日内盈亏阈值后停止新开仓
+- 已有持仓时仍允许保护性检查和服务器平仓检测
+- 下单、平仓与保护逻辑统一走 `TradeExecutor`
 
-- 基于已收盘 K 线
-- 突破前两根高/低点达到 ATR 比例阈值
-- K 线实体需达到最小 ATR 比例要求
+## 编译
 
-### 5.2 回踩（Pullback）
+在 MetaEditor 中直接编译：
 
-入场要点（镜像规则）：
+- `MQL4/Experts/StrategySelector.mq4`
 
-- 价格回踩快 EMA 区域（默认快线为 `EMA9`，容差按 ATR）
-- 收盘重新回到趋势方向
-- 影线拒绝满足最小比例约束
-
-调度优先级：
-
-- **Pullback > TrendContinuation**
-
----
-
-## 6. 风险与执行约束
-
-### 6.1 持仓与开仓约束
-
-- 固定手数：`0.01`
-- 同一 `symbol + magic` 仅允许一个持仓
-- 同一已收盘 bar 最多一次新开仓评估
-
-### 6.2 日内锁定
-
-- 当日净收益（仅统计已平仓订单）达到 `+$50` 后
-- `dailyLocked=true`
-- 当天禁止新开仓
-- 下一服务器日自动解除
-
-### 6.3 低波动拦截
-
-使用 ATR 与点差联合判定：
-
-- ATR points 最小阈值
-- ATR/Spread 比值最小阈值
-
-任一不满足则拦截新开仓。
-
----
-
-## 7. 动态止盈止损（执行层）
-
-执行层采用分阶段保护思路：
-
-1. 先给出初始 SL/TP
-2. 浮盈达到阶段阈值后推进保护
-3. 保护只朝有利方向移动，不允许回退
-4. 修改单时考虑经纪商最小距离与冻结距离
-
----
-
-## 8. 状态持久化（StateStore）
-
-当前持久化只保留“重启后必须恢复”的关键字段，例如：
-
-- 日键、日锁定、当日已平仓净收益、当日开仓次数
-- 入场 bar 时间、入场价、入场 ATR
-- 动态保护跟踪状态
-
-目标是：
-
-- 保持跨重启风控一致性
-- 避免持久化无关复杂状态
-
----
-
-## 9. 编译验证（推荐方式）
-
-如果你在 Windows + PowerShell 下，可直接用：
+也可以在 Windows PowerShell 中执行：
 
 ```powershell
-powershell.exe -NoProfile -Command "& 'C:\Program Files (x86)\MetaTrader 4\metaeditor.exe' '/compile:C:\Users\c1985\vsodeproject\sanqing-ea\MQL4\Experts\StrategySelector.mq4' '/log:C:\Users\c1985\vsodeproject\sanqing-ea\compile-task.log'"
+$args = @(
+  '/compile:C:\Users\c1985\vsodeproject\sanqing-ea\MQL4\Experts\StrategySelector.mq4',
+  '/log:C:\Users\c1985\vsodeproject\sanqing-ea\metaeditor_compile.log'
+)
+$p = Start-Process -FilePath 'C:\Program Files (x86)\MetaTrader 4\metaeditor.exe' -ArgumentList $args -Wait -PassThru
+exit $p.ExitCode
 ```
 
 成功标准：
 
-- `compile-task.log` 末尾出现：
-  - `Result: 0 errors, 0 warnings`
+- `metaeditor_compile.log` 中出现 `Result: 0 errors, 0 warnings`
 
----
+## 本次更新摘要
 
-## 10. 常见日志说明
+这次更新主要完成了以下内容：
 
-日志示例：
+- 第二波多头防追高过滤
+- 第二波空头镜像防追空过滤
+- 主入口集中参数管理
+- continuation 过滤日志纳入中央注册表输出
+- OpenSpec 变更 `add-second-leg-anti-chase-filter` 已完成
 
-```text
-Registry blocked: same closed bar already has an entry
-```
+## 说明
 
-含义：
-
-- 当前这根已收盘 K 线已经开过单
-- 为避免同 bar 重复开仓，注册器拦截本次信号
-- 这属于保护逻辑触发，不是程序异常
-
----
-
-## 11. 开发约定
-
-当前版本采用以下约定：
-
-- 关键逻辑注释统一中文
-- 模块职责尽量单一
-- 先保证编译通过，再做行为验证
-
----
-
-## 12. 免责声明
-
-本项目仅用于策略研究与工程实践，不构成任何投资建议。  
-实盘前请先在模拟盘充分验证，并结合自身风险承受能力审慎使用。
+本项目仅用于策略研究、工程实现与回测验证，不构成任何投资建议。上线前请先做历史回测、样本外验证和模拟盘测试。

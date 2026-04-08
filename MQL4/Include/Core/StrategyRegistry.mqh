@@ -83,8 +83,13 @@ public:
       {
          best = continuationSignal;
          if(m_logger != NULL)
-            m_logger.Info(StringFormat("Registry selected: %s", continuationSignal.comment));
+            m_logger.Info(StringFormat("Registry selected: %s | %s", continuationSignal.comment, continuationSignal.reason));
          return true;
+      }
+      if(m_logger != NULL && StringLen(continuationSignal.reason) > 0 &&
+         StringFind(continuationSignal.reason, "anti-chase") >= 0)
+      {
+         m_logger.Info(StringFormat("Registry blocked TrendContinuation: %s", continuationSignal.reason));
       }
 
       CStrategyPinbarReversal pinbar;

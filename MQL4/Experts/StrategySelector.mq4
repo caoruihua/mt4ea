@@ -16,21 +16,28 @@
 #include "../Include/Core/TradeExecutor.mqh"
 #include "../Include/Core/StrategyRegistry.mqh"
 
-// ======================== 最小参数面板（中文说明） ========================
-input int      MagicNumber            = 20260313; // 订单魔术号
-input int      LogLevel               = 1;        // 日志等级
-input int      MaxTradesPerDay        = 30;       // 日内最多开仓次数（上限）
-input double   DailyProfitStopUsd     = 50.0;     // 日净收益达到该值后锁定
-input double   DailyLossStopUsd       = 40.0;     // 日亏损达到该值后锁定
-input double   FixedLots              = 0.01;     // 统一固定手数
-input int      EMAFastPeriod          = 9;        // 快 EMA 周期
-input int      EMASlowPeriod          = 21;       // 慢 EMA 周期
-input double   LowVolAtrPointsFloor   = 300.0;    // 低波动门控：ATR(14)换算为points后的最小阈值
-input double   LowVolAtrSpreadRatioFloor = 3.0;   // 低波动门控：ATR(points)/Spread(points)最小比值
-input int      Slippage               = 30;       // 下单滑点
-input int      MaxRetries             = 6;        // 执行重试次数
+input int      MagicNumber               = 20260313;
+input int      LogLevel                  = 1;
+input int      MaxTradesPerDay           = 30;
+input double   DailyProfitStopUsd        = 50.0;
+input double   DailyLossStopUsd          = 40.0;
+input double   FixedLots                 = 0.01;
+input int      EMAFastPeriod             = 9;
+input int      EMASlowPeriod             = 21;
+input double   LowVolAtrPointsFloor      = 300.0;
+input double   LowVolAtrSpreadRatioFloor = 3.0;
+input bool     EnableSecondLegLongFilter = true;
+input bool     EnableSecondLegShortFilter = true;
+input double   SecondLegMinSpaceAtr      = 1.0;
+input double   SecondLegPullbackMinAtr   = 0.3;
+input int      SecondLegMinPullbackBars  = 2;
+input int      SecondLegBaseMinBars      = 2;
+input double   SecondLegBaseMaxRangeAtr  = 1.2;
+input double   SecondLegReclaimRatio     = 0.5;
+input int      SecondLegSwingLookbackBars = 20;
+input int      Slippage                  = 30;
+input int      MaxRetries                = 6;
 
-// ======================== 全局对象 ========================
 CLogger            g_logger;
 CSessionClock      g_clock;
 CSignalEngine      g_signalEngine;
@@ -43,10 +50,7 @@ CStrategyRegistry  g_registry;
 StrategyContext    g_ctx;
 RuntimeState       g_state;
 
-// 记录"上一根已处理收盘bar时间"，保证新开仓只在新bar评估
 datetime           g_lastProcessedClosedBar = 0;
-
-// 心跳日志：记录上一次打印心跳的分钟时间（按本地时间），用于每分钟打印一次心跳
 datetime           g_lastHeartbeatMinute = 0;
 
 bool FillContext()
@@ -73,6 +77,16 @@ bool FillContext()
    g_ctx.lowVolAtrPointsFloor = LowVolAtrPointsFloor;
    g_ctx.lowVolAtrSpreadRatioFloor = LowVolAtrSpreadRatioFloor;
 
+   g_ctx.enableSecondLegLongFilter = EnableSecondLegLongFilter;
+   g_ctx.enableSecondLegShortFilter = EnableSecondLegShortFilter;
+   g_ctx.secondLegMinSpaceAtr = SecondLegMinSpaceAtr;
+   g_ctx.secondLegPullbackMinAtr = SecondLegPullbackMinAtr;
+   g_ctx.secondLegMinPullbackBars = SecondLegMinPullbackBars;
+   g_ctx.secondLegBaseMinBars = SecondLegBaseMinBars;
+   g_ctx.secondLegBaseMaxRangeAtr = SecondLegBaseMaxRangeAtr;
+   g_ctx.secondLegReclaimRatio = SecondLegReclaimRatio;
+   g_ctx.secondLegSwingLookbackBars = SecondLegSwingLookbackBars;
+
    g_ctx.fixedLots = FixedLots;
    g_ctx.slippage = Slippage;
    g_ctx.maxRetries = MaxRetries;
@@ -82,23 +96,19 @@ bool FillContext()
    return true;
 }
 
-// 打印心跳日志：每分钟最多打印一次，包含详版运行状态
 void PrintHeartbeat()
 {
    datetime now = TimeLocal();
-   // 取当前时间的分钟部分（去掉秒），用于判重
    datetime currentMinute = now - (now % 60);
-   
+
    if(currentMinute == g_lastHeartbeatMinute)
-      return; // 同一分钟内已经打印过
-   
+      return;
+
    g_lastHeartbeatMinute = currentMinute;
-   
-   // 获取持仓信息
+
    int ticket = g_executor.GetCurrentPosition(g_ctx);
    string posInfo = (ticket >= 0) ? StringFormat("持仓票据=%d", ticket) : "无持仓";
-   
-   // 打印详版心跳日志
+
    g_logger.Info(StringFormat(
       "[心跳] 品种=%s 时间=%s 点差=%.1f EMA9=%.2f EMA21=%.2f ATR14=%.2f 今日交易=%d 日锁定=%s %s",
       g_ctx.symbol,
@@ -129,6 +139,23 @@ int OnInit()
       return(INIT_FAILED);
    }
 
+   if(SecondLegMinSpaceAtr < 0.0 || SecondLegPullbackMinAtr < 0.0 ||
+      SecondLegMinPullbackBars < 1 || SecondLegBaseMinBars < 1 ||
+      SecondLegBaseMaxRangeAtr <= 0.0 || SecondLegReclaimRatio <= 0.0 ||
+      SecondLegReclaimRatio >= 1.0 || SecondLegSwingLookbackBars < 5)
+   {
+      g_logger.Error(StringFormat(
+         "Invalid second-leg filter settings: minSpaceAtr=%.2f pullbackMinAtr=%.2f minPullbackBars=%d baseMinBars=%d baseMaxRangeAtr=%.2f reclaimRatio=%.2f swingLookback=%d",
+         SecondLegMinSpaceAtr,
+         SecondLegPullbackMinAtr,
+         SecondLegMinPullbackBars,
+         SecondLegBaseMinBars,
+         SecondLegBaseMaxRangeAtr,
+         SecondLegReclaimRatio,
+         SecondLegSwingLookbackBars));
+      return(INIT_FAILED);
+   }
+
    g_executor.Init(g_logger);
    g_registry.Init(g_logger);
 
@@ -152,34 +179,28 @@ void OnTick()
 {
    if(!FillContext())
       return;
-   
-   // 心跳日志：每分钟打印一次详版运行状态
+
    PrintHeartbeat();
 
-   // 1) 每tick先同步日风险状态（跨日重置 + 日净收益锁定）
    bool dailyLocked = g_risk.CheckCircuitBreaker(g_ctx, g_state, DailyProfitStopUsd, DailyLossStopUsd);
 
-   // 2) 每tick都允许持仓保护/平仓检查，不受新开仓锁定影响
    g_executor.ApplyGlobalProfitLockIfNeeded(g_ctx);
    bool closedByProtection = g_executor.CheckStopLossTakeProfit(g_ctx, g_state);
    if(closedByProtection)
       g_stateStore.Save(g_state);
-   
-   // 2.1) 检测服务器平仓（止损/止盈由经纪商服务器执行的情况）
+
    bool closedByServer = g_executor.DetectServerClosedPosition(g_ctx, g_state, g_state.lastTicket);
    if(closedByServer)
       g_stateStore.Save(g_state);
 
-   // 3) 新开仓仅在“新收盘bar”触发一次
    if(g_lastProcessedClosedBar == g_ctx.lastClosedBarTime)
       return;
    g_lastProcessedClosedBar = g_ctx.lastClosedBarTime;
 
-   // 4) 锁定或日内上限达到后，禁止新开仓
    if(dailyLocked)
    {
       g_state.dailyLocked = true;
-      g_logger.Info(StringFormat("[风控] 日风控触发（盈/亏锁定），禁止新开仓 | 已平仓=%.2f", g_state.dailyClosedProfit));
+      g_logger.Info(StringFormat("[风控] 日风控触发（盈亏锁定），禁止新开仓 | 已平仓=%.2f", g_state.dailyClosedProfit));
       g_stateStore.Save(g_state);
       return;
    }
@@ -189,13 +210,11 @@ void OnTick()
       return;
    }
 
-   // 5) 已有持仓则不重复开仓（symbol+magic 单持仓）
    int existingTicket = g_executor.GetCurrentPosition(g_ctx);
-   g_state.lastTicket = existingTicket;  // 更新lastTicket用于下一tick检测
+   g_state.lastTicket = existingTicket;
    if(existingTicket >= 0)
       return;
 
-   // 6) 市场过滤（低波动全局阻断；趋势有效性由各策略自行判断）
    MarketFilterResult filter;
    if(!g_marketState.EvaluateFilter(g_ctx, filter))
       return;
@@ -206,7 +225,6 @@ void OnTick()
       return;
    }
 
-   // 7) 三策略调度（ExpansionFollow -> Pullback -> TrendContinuation）
    TradeSignal best;
    if(!g_registry.EvaluateBestSignal(g_ctx, g_state, best) || !best.valid)
       return;
@@ -220,7 +238,7 @@ void OnTick()
       g_state.trailingActive = false;
       g_state.highestCloseSinceEntry = Close[1];
       g_state.lowestCloseSinceEntry = Close[1];
-      g_state.lastTicket = ticket;  // 记录当前订单号
+      g_state.lastTicket = ticket;
 
       if(OrderSelect(ticket, SELECT_BY_TICKET))
          g_state.entryPrice = OrderOpenPrice();
